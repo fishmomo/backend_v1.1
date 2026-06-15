@@ -124,6 +124,8 @@ manager = ConnectionManager()
 
 接收 `date1`（`YYYY-MM-DD`）和 `num`（正整数），在当前进程内临时切换 Track、SCDP、ICFP、MWR 数据路径，并清空后端内存缓存、文件游标、MWR pending 和本地云雷达缓存。
 
+四类业务文件路径由 `config.py::build_data_source_paths(date1, num)` 生成。`readers.py` 只消费该函数返回的路径，不硬编码业务盘符、目录结构或文件命名模板。
+
 该接口不写入 `config.py`，也不写入外部配置文件；程序重启后仍使用 `config.py` 中的默认 `DATE1`、`DATE2`、`NUM`。
 
 ### GET `/api/local-radar/latest?product=PPI`

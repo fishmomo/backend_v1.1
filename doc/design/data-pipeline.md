@@ -14,6 +14,8 @@
 | ICFP | `ICFP_FILE` | `IcfpRecord` | 冰晶/粒子谱数据，包含数浓度、LWC、MVD、ED 和 195 个 bin。 |
 | MWR | `MWR_FILE` | `MwrRecord` | 微波辐射计廓线，包含地面量、云底、积分量和 0-1 km 廓线。 |
 
+默认路径由 `config.py` 中的 `DATE1`、`DATE2`、`NUM` 和 `build_data_source_paths()` 生成。运行时切换日期/架次时，后端再次调用 `build_data_source_paths(date1, num)` 得到当前四类业务文件路径；`readers.py` 不保存业务盘符、目录结构或文件名模板。
+
 模拟数据位于 `simulated_data/`。当 `ALLOW_SIMULATED_FALLBACK = True` 且主文件缺失时，读取器会回退到：
 
 - `simulated_data/track_realtime.csv`

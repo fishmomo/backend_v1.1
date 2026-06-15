@@ -19,10 +19,24 @@ BY Weather Backend v1.1 是一个面向无人机气象观测与飞行态势展�
 
 ## 快速运行
 
-开发态直接启动：
+项目使用 Conda 管理 Python 运行环境，目标 Python 版本为 3.9。首次部署或新机器恢复环境：
 
 ```bash
-python app.py
+conda env create -f environment.yml
+conda activate py3.9
+```
+
+已有 `py3.9` 环境时更新依赖：
+
+```bash
+conda env update -n py3.9 -f environment.yml --prune
+conda activate py3.9
+```
+
+开发态直接启动 FastAPI：
+
+```bash
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
 推荐使用启动器，获得与打包态一致的运行时目录、日志、外部配置加载和自动打开浏览器行为：
@@ -72,6 +86,7 @@ python launcher.py
 
 ```text
 backend_v1.1/
+  environment.yml         # Conda Python 3.9 环境与依赖清单
   launcher.py             # 单机启动器：运行时目录、日志、外部 config、浏览器
   app.py                  # FastAPI 入口、后台轮询、HTTP API、WebSocket、静态资源
   config.py               # 业务文件路径、轮询/对齐参数、地图/雷达/影像配置
@@ -117,7 +132,8 @@ python get_radar/radar_latlon_grid_demo.py
 主要配置集中在 [config.py](./config.py)：
 
 - `DATE1`、`DATE2`、`NUM`：业务日期和架次编号，Track/SCDP/ICFP/MWR 与本地云雷达路径都会使用这些日期变量。
-- `TRACK_FILE`、`SCDP_FILE`、`ICFP_FILE`、`MWR_FILE`：业务数据输入文件。
+- `DATA_ROOT`、`build_data_source_paths()`：四类业务文件路径生成规则。`readers.py` 不硬编码业务目录或文件命名模板，只读取该函数返回的路径。
+- `TRACK_FILE`、`SCDP_FILE`、`ICFP_FILE`、`MWR_FILE`：由默认日期/架次生成的业务数据输入文件。
 - `ALLOW_SIMULATED_FALLBACK`：主业务文件缺失时是否允许回退到 `simulated_data/`。
 - `POLL_INTERVAL_SEC`：后台业务数据轮询间隔。
 - `ALIGN_DELAY_SEC`：Track 到达后等待其它源数据的对齐延迟。

@@ -162,6 +162,13 @@ map_tiles/
 TEST_BYW.spec
 ```
 
+构建前先进入 Conda 环境：
+
+```bash
+conda activate py3.9
+pyinstaller TEST_BYW.spec
+```
+
 入口：
 
 ```python
@@ -179,6 +186,7 @@ dist/TEST_BYW/
 ```text
 TEST_BYW.exe
 config.py
+environment.yml
 frontend/
 reference/
 simulated_data/
