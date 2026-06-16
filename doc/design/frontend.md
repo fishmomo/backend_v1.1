@@ -100,7 +100,7 @@ Leaflet 地图包含：
 | 锚点 | 用户点击生成 |
 | 区域边界 | 用户输入经纬度边界生成 |
 
-`app.js` 为 RainViewer、本地云雷达、Himawari、重要路径等建立了独立 pane，便于控制层级和点击穿透。本地云雷达 pane 的层级高于 RainViewer；PPI 与 RPI 同时开启时，前端分别请求最新数据并以 Canvas 绘制，绘制顺序固定为 PPI 先画、RPI 后画。
+`app.js` 为 RainViewer、本地云雷达、Himawari、重要路径等建立了独立 pane，便于控制层级和点击穿透。地图业务图层从上到下为：锚点、测距、航迹/飞机、本地云雷达、区域边界、RainViewer 雷达、RainViewer 覆盖范围、Himawari。PPI 与 RPI 同时开启时，前端分别请求最新数据并以 Canvas 绘制，绘制顺序固定为 PPI 先画、RPI 后画。
 
 本地云雷达刷新机制：
 

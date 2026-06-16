@@ -304,3 +304,8 @@ logs/
 # ignore .pyc
 __pycache__/
 *.pyc
+
+# pic
+*.png
+*.jpg
+

@@ -376,7 +376,7 @@ map.createPane('importantPathPane');
 map.getPane('importantPathPane').style.zIndex = 420;
 map.getPane('importantPathPane').style.pointerEvents = 'none';
 map.createPane('areaBoundaryPane');
-map.getPane('areaBoundaryPane').style.zIndex = 650;
+map.getPane('areaBoundaryPane').style.zIndex = 505;
 map.getPane('areaBoundaryPane').style.pointerEvents = 'none';
 map.createPane('measurePane');
 map.getPane('measurePane').style.zIndex = 700;
