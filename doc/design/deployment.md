@@ -1,15 +1,24 @@
 # 运行与发布 | BY Weather Backend v1.1
 
 > 文档版本：1.0  
-> 相关文件：`environment.yml`、`launcher.py`、`config.py`、`TEST_BYW.spec`
+> 相关文件：`pyproject.toml`、`uv.lock`、`environment.yml`、`Makefile`、`launcher.py`、`config.py`、`TEST_BYW.spec`
 
 ## 包管理理念
 
-**Conda 环境、Python 3.14、单机 B/S、发布目录可直接运行**。
+**远端 app 机器使用 uv，按 `uv.lock` 恢复 Python 3.14 虚拟环境；本地 Windows 可用 Conda 环境 `byw_py314` 模拟远端运行环境。**
 
-项目以 [environment.yml](../../environment.yml) 作为 Python 包管理入口，默认环境名为 `byw_py314`。开发机、现场机和打包机应尽量使用同一份 Conda 环境文件恢复依赖，避免依赖隐藏在个人 base 环境中。
+远端 Linux app 机器的标准入口是 [pyproject.toml](../../pyproject.toml) 和 [uv.lock](../../uv.lock)。部署脚本会在发布目录下创建 `.venv`，执行：
 
-当前环境覆盖主要运行依赖：
+```bash
+uv venv .venv --python 3.14
+uv sync --frozen --no-install-project --python 3.14
+```
+
+这里使用 `--no-install-project`，因为当前项目以源码目录方式运行 `app.py` / `launcher.py`，不需要把项目自身安装成 wheel，同时也避免触碰当前 `pyproject.toml` 的 build backend。
+
+本地调试环境可继续使用 [environment.yml](../../environment.yml)，环境名为 `byw_py314`，只作为本机模拟和验证入口，不作为远端 app 机器部署入口。
+
+当前运行依赖覆盖：
 
 - Web 服务运行：`fastapi`、`uvicorn`、`requests`。
 - 数据处理与本地云雷达：`numpy`、`scipy`、`pandas`、`xarray`。
@@ -17,38 +26,38 @@
 
 `pyinstaller`、`paramiko` 等打包或远程维护工具不作为远端 app 运行主依赖；如需在本机打包或执行远程维护脚本，应按需安装到 `byw_py314` 或单独维护打包环境。
 
-首次创建环境：
+本地首次创建模拟环境：
 
 ```bash
 conda env create -f environment.yml
 conda activate byw_py314
 ```
 
-已有环境更新：
+本地已有环境更新：
 
 ```bash
 conda env update -n byw_py314 -f environment.yml --prune
 conda activate byw_py314
 ```
 
-从当前环境回写依赖清单时，优先人工维护 `environment.yml` 中的顶层依赖；如需完整锁定现场环境，可另行导出完整快照：
+从当前本地环境回写依赖清单时，优先人工维护 `environment.yml` 中的顶层依赖；如需完整锁定本地模拟环境，可另行导出完整快照：
 
 ```bash
 conda env export -n byw_py314 > environment.lock.yml
 ```
 
-`environment.lock.yml` 适合现场留档，不建议替代 `environment.yml` 作为日常维护入口。
+`environment.lock.yml` 适合本地环境留档，不建议替代 `environment.yml` 作为日常维护入口。远端 app 机器以 `uv.lock` 为准。
 
 ## 开发运行
 
-推荐使用启动器：
+本地推荐使用启动器：
 
 ```bash
 conda activate byw_py314
 python launcher.py
 ```
 
-直接运行 FastAPI：
+本地直接运行 FastAPI：
 
 ```bash
 conda activate byw_py314
@@ -74,7 +83,7 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 8. 启动 Uvicorn。
 9. 根据配置自动打开浏览器。
 
-因此发布态和现场使用应优先启动 `launcher.py` 或其打包 exe。
+因此本地单机发布态应优先启动 `launcher.py` 或其打包 exe。远端 app 机器以 systemd user service 启动 `uvicorn app:app`。
 
 ## 配置
 
@@ -155,6 +164,65 @@ map_tiles/
 ```
 
 `map_tiles/` 不存在时，系统仍可运行，但 `/api/map-config` 会返回 `has_local_tiles = false`。
+
+## 远端 app 机器部署
+
+远端 app 机器是 Linux，已安装 `uv`。部署流程是：本机生成源码包，上传到 app，解压到指定目录，然后用 `Makefile` 或 `scripts/deploy.sh` 恢复环境并安装 systemd user service。
+
+本机生成发布包：
+
+```bash
+python scripts/package_release.py 20260617
+```
+
+上传到 app：
+
+```bash
+scp dist/backend-v1-20260617.tar.gz app:/tmp/
+```
+
+在 app 机器解压到指定目录：
+
+```bash
+sudo mkdir -p /opt/app/backend_v1.1
+sudo tar -xzf /tmp/backend-v1-20260617.tar.gz -C /opt/app/backend_v1.1 --strip-components=1
+cd /opt/app/backend_v1.1
+```
+
+安装依赖和服务：
+
+```bash
+sudo bash ./scripts/deploy.sh app /opt/app/backend_v1.1
+```
+
+部署脚本会：
+
+1. 保留既有 `.env`，不存在时从 `.env.example` 生成。
+2. 使用 `uv venv .venv --python 3.14` 创建虚拟环境。
+3. 使用 `uv sync --frozen --no-install-project --python 3.14` 按锁文件恢复依赖。
+4. 安装并 enable `backend-v1.service` 用户服务，但不会自动 start。
+
+首次部署后先检查并修改 `.env`：
+
+```bash
+sudo -u app vi /opt/app/backend_v1.1/.env
+```
+
+启动、查看状态和日志：
+
+```bash
+make start TARGET_USER=app
+make status TARGET_USER=app
+make logs TARGET_USER=app
+```
+
+如果需要让用户服务在 app 用户未登录时仍可运行：
+
+```bash
+make linger TARGET_USER=app
+```
+
+部署包内保留 `environment.yml`，但它只用于本地 Conda 模拟环境；远端 app 机器不要用 Conda 还原运行环境。
 
 ## PyInstaller 打包
 

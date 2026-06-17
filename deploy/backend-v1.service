@@ -5,9 +5,9 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=__INSTALL_DIR__
-ExecStart=__VENV_DIR__/bin/uvicorn app:app
 EnvironmentFile=__INSTALL_DIR__/.env
 Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/sh -lc 'exec "__VENV_DIR__/bin/uvicorn" app:app --host "${UVICORN_HOST:-0.0.0.0}" --port "${UVICORN_PORT:-8011}" --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}"'
 Restart=always
 RestartSec=5
 

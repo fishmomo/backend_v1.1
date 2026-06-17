@@ -19,7 +19,7 @@ BY Weather Backend v1.1 是一个面向无人机气象观测与飞行态势展�
 
 ## 快速运行
 
-项目使用 Conda 管理 Python 运行环境，本地模拟远端 app 机器的环境名为 `byw_py314`，目标 Python 版本为 3.14。首次部署或新机器恢复环境：
+本地调试可继续使用 Conda 环境 `byw_py314` 来模拟远端 app 机器的 Python 3.14 运行环境：
 
 ```bash
 conda env create -f environment.yml
@@ -49,6 +49,27 @@ python launcher.py
 
 - 页面：`http://127.0.0.1:8000`
 - API 文档：`http://127.0.0.1:8000/docs`
+
+远端 Linux app 机器不使用 Conda，使用机器上已有的 `uv` 按 `uv.lock` 快速恢复 `.venv`。本机打包后上传：
+
+```bash
+python scripts/package_release.py 20260617
+scp dist/backend-v1-20260617.tar.gz app:/tmp/
+```
+
+在 app 机器上解压、部署并启动：
+
+```bash
+sudo mkdir -p /opt/app/backend_v1.1
+sudo tar -xzf /tmp/backend-v1-20260617.tar.gz -C /opt/app/backend_v1.1 --strip-components=1
+cd /opt/app/backend_v1.1
+sudo bash ./scripts/deploy.sh app /opt/app/backend_v1.1
+sudo -u app vi /opt/app/backend_v1.1/.env
+make start TARGET_USER=app
+make status TARGET_USER=app
+```
+
+`scripts/deploy.sh` 会创建 `.venv` 并执行 `uv sync --frozen --no-install-project --python 3.14`，不会修改 `pyproject.toml` 或 `uv.lock`。
 
 ## 核心能力
 
@@ -86,7 +107,10 @@ python launcher.py
 
 ```text
 backend_v1.1/
-  environment.yml         # Conda Python 3.14 环境与主要依赖清单
+  environment.yml         # 本地 Conda Python 3.14 模拟环境与主要依赖清单
+  pyproject.toml          # 远端 app 机器 uv 依赖入口
+  uv.lock                 # 远端 app 机器 uv 锁文件
+  Makefile                # Linux 部署、服务启停和状态查看快捷入口
   launcher.py             # 单机启动器：运行时目录、日志、外部 config、浏览器
   app.py                  # FastAPI 入口、后台轮询、HTTP API、WebSocket、静态资源
   config.py               # 业务文件路径、轮询/对齐参数、地图/雷达/影像配置
@@ -119,6 +143,12 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 
 # 运行冒烟测试
 python smoke_test.py
+
+# 生成远端 app 机器部署包
+python scripts/package_release.py 20260617
+
+# Linux app 机器解压后恢复 uv 环境
+make env
 
 # 生成/追加模拟实时数据
 python simulate_realtime.py

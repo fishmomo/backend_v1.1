@@ -1,140 +1,116 @@
 #!/usr/bin/env bash
-# Remote deployment script for backend-v1.
+# Remote deployment script for the Linux app host.
 #
-# Run this AFTER extracting the tarball on the target host.
+# Run this after extracting backend-v1-<tag>.tar.gz on the target host.
 #
 # Usage:
-#   sudo ./scripts/deploy.sh <user> [--offline]
+#   sudo bash ./scripts/deploy.sh <user> [install-dir]
 #
-# Example:
-#   sudo ./scripts/deploy.sh yujie
-#   sudo ./scripts/deploy.sh yujie --offline
+# Examples:
+#   sudo bash ./scripts/deploy.sh app
+#   sudo bash ./scripts/deploy.sh app /opt/app/backend_v1.1
 #
 # The script:
-#   1. Installs source to /opt/<user>/backend_v1.1/
-#   2. Creates/updates Python venv via uv sync
-#   3. Sets up .env from .env.example (preserves existing)
-#   4. Installs/updates the systemd user service file
-#   5. Prints start/status commands (does NOT auto-start)
+#   1. Installs source to INSTALL_DIR or /opt/<user>/backend_v1.1
+#   2. Creates/updates .venv via uv and uv.lock
+#   3. Sets up .env from .env.example, preserving existing .env
+#   4. Installs/enables the systemd user service
+#   5. Prints start/status/log commands
 set -euo pipefail
 
-# Config
-REPO_NAME="backend_v1.1"
-SERVICE_NAME="backend-v1"
+REPO_NAME="${REPO_NAME:-backend_v1.1}"
+SERVICE_NAME="${SERVICE_NAME:-backend-v1}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.14}"
 
-# Args
 if [ $# -lt 1 ]; then
-  echo "Usage: sudo $0 <user> [--offline]"
-  echo "Example: sudo $0 yujie"
+  echo "Usage: sudo $0 <user> [install-dir]"
+  echo "Example: sudo $0 app /opt/app/backend_v1.1"
   exit 1
 fi
-TARGET_USER="$1"
-OFFLINE=false
-if [ "${2:-}" = "--offline" ]; then OFFLINE=true; fi
 
-# Resolve paths
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-INSTALL_DIR="/opt/${TARGET_USER}/${REPO_NAME}"
+TARGET_USER="$1"
+INSTALL_DIR="${2:-${INSTALL_DIR:-/opt/${TARGET_USER}/${REPO_NAME}}}"
 VENV_DIR="${INSTALL_DIR}/.venv"
 USER_SERVICE_DIR="/home/${TARGET_USER}/.config/systemd/user"
 SERVICE_FILE="${USER_SERVICE_DIR}/${SERVICE_NAME}.service"
 
-echo "==> Deploying backend-v1 for user: ${TARGET_USER}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "==> Deploying backend-v1"
+echo "    User:        ${TARGET_USER}"
 echo "    Source:      ${SOURCE_DIR}"
 echo "    Install to:  ${INSTALL_DIR}"
-echo "    Mode:        $([ "$OFFLINE" = true ] && echo 'offline (no network)' || echo 'online')"
+echo "    Python:      ${PYTHON_VERSION}"
+echo "    Env tool:    uv"
 
-# 1. Copy source files
+if ! id "${TARGET_USER}" >/dev/null 2>&1; then
+  echo "Target user does not exist: ${TARGET_USER}"
+  exit 1
+fi
+
 echo "==> [1/5] Installing source files..."
 install -d -o "${TARGET_USER}" -g "${TARGET_USER}" "${INSTALL_DIR}"
-rsync -a --delete "${SOURCE_DIR}/" "${INSTALL_DIR}/" \
-  --exclude='.venv' \
-  --exclude='__pycache__' \
-  --exclude='*.pyc' \
-  --exclude='.git' \
-  --exclude='dist'
+SOURCE_REAL="$(cd "${SOURCE_DIR}" && pwd -P)"
+INSTALL_REAL="$(cd "${INSTALL_DIR}" && pwd -P)"
+
+if [ "${SOURCE_REAL}" != "${INSTALL_REAL}" ]; then
+  rsync -a --delete "${SOURCE_DIR}/" "${INSTALL_DIR}/" \
+    --exclude='.venv' \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    --exclude='.git' \
+    --exclude='build' \
+    --exclude='dist' \
+    --exclude='logs'
+else
+  echo "    Source is already the install directory; skipping copy."
+fi
 chown -R "${TARGET_USER}:${TARGET_USER}" "${INSTALL_DIR}"
 
-# 2. Bootstrap .env
 echo "==> [2/5] Setting up .env..."
 if [ ! -f "${INSTALL_DIR}/.env" ]; then
   cp "${INSTALL_DIR}/.env.example" "${INSTALL_DIR}/.env"
   chown "${TARGET_USER}:${TARGET_USER}" "${INSTALL_DIR}/.env"
   echo "    Created ${INSTALL_DIR}/.env from .env.example"
-  echo "    Edit it before starting the service:"
-  echo "       sudo -u ${TARGET_USER} vi ${INSTALL_DIR}/.env"
 else
   echo "    .env already exists, keeping it"
 fi
 
-# 3. Create/update venv
-echo "==> [3/5] Creating/updating Python venv..."
+echo "==> [3/5] Restoring Python environment with uv..."
+su - "${TARGET_USER}" -c "
+  set -e
+  cd '${INSTALL_DIR}'
+  command -v uv >/dev/null
+  uv venv .venv --python '${PYTHON_VERSION}'
+  uv sync --frozen --no-install-project --python '${PYTHON_VERSION}'
+  .venv/bin/python -B -c 'import app; print(app.app.title)'
+"
 
-_uv_sync() {
-  local user="$1" dir="$2"
-  # Create venv with Python 3.12 (uv downloads interpreter if needed)
-  su - "$user" -c "cd '$dir' && uv venv .venv --python 3.12 2>/dev/null; uv sync --frozen"
-}
-
-_uv_offline_install() {
-  local user="$1" dir="$2"
-  su - "$user" -c "
-    cd '$dir'
-    python3 -m venv .venv
-    .venv/bin/pip install --no-index --find-links vendor/wheels/ -r vendor/requirements.txt
-  "
-}
-
-if command -v uv &>/dev/null; then
-  if [ "$OFFLINE" = true ]; then
-    if [ -d "${INSTALL_DIR}/vendor/wheels" ]; then
-      _uv_offline_install "${TARGET_USER}" "${INSTALL_DIR}"
-    else
-      echo "    Offline mode requested but vendor/wheels/ not found."
-      echo "    Re-build with: ./scripts/build.sh --offline"
-      exit 1
-    fi
-  else
-    _uv_sync "${TARGET_USER}" "${INSTALL_DIR}"
-  fi
-else
-  echo "    'uv' not found on this system."
-  echo "    Install uv first: curl -LsSf https://astral.sh/uv/install.sh | sh"
-  exit 1
-fi
-
-# 4. Install/update systemd user service
 echo "==> [4/5] Installing systemd user service..."
 install -d -o "${TARGET_USER}" -g "${TARGET_USER}" "${USER_SERVICE_DIR}"
-
 sed \
   -e "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
   -e "s|__VENV_DIR__|${VENV_DIR}|g" \
-  "${SOURCE_DIR}/deploy/${SERVICE_NAME}.service" > "${SERVICE_FILE}"
-
+  "${INSTALL_DIR}/deploy/${SERVICE_NAME}.service" > "${SERVICE_FILE}"
 chown "${TARGET_USER}:${TARGET_USER}" "${SERVICE_FILE}"
 
-# Reload user daemon
-su - "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) systemctl --user daemon-reload"
+USER_UID="$(id -u "${TARGET_USER}")"
+su - "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user daemon-reload"
+su - "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user enable ${SERVICE_NAME}.service"
 
-# Enable (but NOT start)
-su - "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) systemctl --user enable ${SERVICE_NAME}.service"
-
-echo "==> [5/5] Done!"
-
-# 5. Print instructions
+echo "==> [5/5] Done."
 echo ""
-echo "Service installed but NOT started"
+echo "Service installed but not started."
 echo ""
-echo "  Edit config first (if needed):"
-echo "    vi ${INSTALL_DIR}/.env"
+echo "Edit config before starting:"
+echo "  sudo -u ${TARGET_USER} vi ${INSTALL_DIR}/.env"
 echo ""
-echo "  Start:"
-echo "    su - ${TARGET_USER} -c 'XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) systemctl --user start ${SERVICE_NAME}'"
+echo "Start:"
+echo "  sudo -u ${TARGET_USER} env XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user start ${SERVICE_NAME}"
 echo ""
-echo "  Status:"
-echo "    su - ${TARGET_USER} -c 'XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) systemctl --user status ${SERVICE_NAME}'"
+echo "Status:"
+echo "  sudo -u ${TARGET_USER} env XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user status ${SERVICE_NAME}"
 echo ""
-echo "  Logs:"
-echo "    su - ${TARGET_USER} -c 'XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) journalctl --user -u ${SERVICE_NAME} -f'"
+echo "Logs:"
+echo "  sudo -u ${TARGET_USER} env XDG_RUNTIME_DIR=/run/user/${USER_UID} journalctl --user -u ${SERVICE_NAME} -f"
