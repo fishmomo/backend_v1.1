@@ -10,7 +10,7 @@
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin=""
     >
-    <link rel="stylesheet" href="/static/styles.css?v=20260613-lite-local-radar-hide">
+    <link rel="stylesheet" href="/static/styles.css?v=20260617-live-track-click">
 </head>
 <body>
     <header class="topbar">
@@ -54,6 +54,10 @@
                 <label>
                     <span>架次</span>
                     <input id="data-source-num" type="number" min="1" step="1" value="1">
+                </label>
+                <label>
+                    <span>机型</span>
+                    <input id="data-source-aircraft" type="text" value="B11" autocomplete="off">
                 </label>
                 <button id="apply-data-source" type="button">应用日期</button>
                 <span class="rail-note" id="data-source-note">重启后恢复默认日期</span>
@@ -102,6 +106,10 @@
                 <label class="toggle">
                     <input id="radar-coverage-enabled" type="checkbox">
                     <span>雷达覆盖</span>
+                </label>
+                <label class="toggle">
+                    <input id="fixed-overlay-enabled" type="checkbox">
+                    <span>空域显示</span>
                 </label>
                 <label class="toggle permission-local-radar">
                     <input id="local-radar-enabled" type="checkbox">
@@ -336,6 +344,6 @@
         crossorigin=""
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <script src="/static/app.js?v=20260613-lite-local-radar-hide"></script>
+    <script src="/static/app.js?v=20260617-live-track-click"></script>
 </body>
 </html>

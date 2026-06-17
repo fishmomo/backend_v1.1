@@ -118,15 +118,15 @@ manager = ConnectionManager()
 
 ### GET `/api/data-source`
 
-返回当前运行时数据日期、`DATE2`、架次 `num`、默认日期/架次和四类业务文件路径。该接口反映本次进程内临时选择，不代表源码配置已被修改。
+返回当前运行时数据日期、`DATE2`、架次 `num`、机型 `aircraft_model`、默认日期/架次/机型和四类业务文件路径。该接口反映本次进程内临时选择，不代表源码配置已被修改。
 
 ### POST `/api/data-source`
 
-接收 `date1`（`YYYY-MM-DD`）和 `num`（正整数），在当前进程内临时切换 Track、SCDP、ICFP、MWR 数据路径，并清空后端内存缓存、文件游标、MWR pending 和本地云雷达缓存。
+接收 `date1`（`YYYY-MM-DD`）、`num`（正整数）和 `aircraft_model`（如 `B11`、`B12`、`B13`），在当前进程内临时切换 Track、SCDP、ICFP、MWR 数据路径，并清空后端内存缓存、文件游标、MWR pending 和本地云雷达缓存。
 
-四类业务文件路径由 `config.py::build_data_source_paths(date1, num)` 生成。`readers.py` 只消费该函数返回的路径，不硬编码业务盘符、目录结构或文件命名模板。
+四类业务文件路径由 `config.py::build_data_source_paths(date1, num, aircraft_model)` 生成。`readers.py` 只消费该函数返回的路径，不硬编码业务盘符、目录结构或文件命名模板。
 
-该接口不写入 `config.py`，也不写入外部配置文件；程序重启后仍使用 `config.py` 中的默认 `DATE1`、`DATE2`、`NUM`。
+该接口不写入 `config.py`，也不写入外部配置文件；程序重启后仍使用 `config.py` 中的默认 `DATE1`、`DATE2`、`NUM`、`AIRCRAFT_MODEL`。
 
 ### GET `/api/local-radar/latest?product=PPI`
 

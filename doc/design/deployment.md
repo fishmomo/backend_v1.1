@@ -5,34 +5,36 @@
 
 ## 包管理理念
 
-**Conda 环境、Python 3.9、单机 B/S、发布目录可直接运行**。
+**Conda 环境、Python 3.14、单机 B/S、发布目录可直接运行**。
 
-项目以 [environment.yml](../../environment.yml) 作为 Python 包管理入口，默认环境名为 `py3.9`。开发机、现场机和打包机应尽量使用同一份 Conda 环境文件恢复依赖，避免依赖隐藏在个人 base 环境中。
+项目以 [environment.yml](../../environment.yml) 作为 Python 包管理入口，默认环境名为 `byw_py314`。开发机、现场机和打包机应尽量使用同一份 Conda 环境文件恢复依赖，避免依赖隐藏在个人 base 环境中。
 
-当前环境覆盖三类依赖：
+当前环境覆盖主要运行依赖：
 
 - Web 服务运行：`fastapi`、`uvicorn`、`requests`。
 - 数据处理与本地云雷达：`numpy`、`scipy`、`pandas`、`xarray`。
-- 试验脚本与发布打包：`matplotlib`、`paramiko`、`pyinstaller`。
+- 试验脚本：`matplotlib`。
+
+`pyinstaller`、`paramiko` 等打包或远程维护工具不作为远端 app 运行主依赖；如需在本机打包或执行远程维护脚本，应按需安装到 `byw_py314` 或单独维护打包环境。
 
 首次创建环境：
 
 ```bash
 conda env create -f environment.yml
-conda activate py3.9
+conda activate byw_py314
 ```
 
 已有环境更新：
 
 ```bash
-conda env update -n py3.9 -f environment.yml --prune
-conda activate py3.9
+conda env update -n byw_py314 -f environment.yml --prune
+conda activate byw_py314
 ```
 
 从当前环境回写依赖清单时，优先人工维护 `environment.yml` 中的顶层依赖；如需完整锁定现场环境，可另行导出完整快照：
 
 ```bash
-conda env export -n py3.9 > environment.lock.yml
+conda env export -n byw_py314 > environment.lock.yml
 ```
 
 `environment.lock.yml` 适合现场留档，不建议替代 `environment.yml` 作为日常维护入口。
@@ -42,14 +44,14 @@ conda env export -n py3.9 > environment.lock.yml
 推荐使用启动器：
 
 ```bash
-conda activate py3.9
+conda activate byw_py314
 python launcher.py
 ```
 
 直接运行 FastAPI：
 
 ```bash
-conda activate py3.9
+conda activate byw_py314
 python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
@@ -165,7 +167,7 @@ TEST_BYW.spec
 构建前先进入 Conda 环境：
 
 ```bash
-conda activate py3.9
+conda activate byw_py314
 pyinstaller TEST_BYW.spec
 ```
 

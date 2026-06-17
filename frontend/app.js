@@ -17,7 +17,7 @@ const REPLAY_MAP_RENDER_INTERVAL_MS = 1000;
 const REPLAY_CHART_RENDER_INTERVAL_MS = 1200;
 const REPLAY_HEATMAP_RENDER_INTERVAL_MS = 2000;
 const MAP_MINI_VISIBLE_RATIO = 0.35;
-const FRONTEND_BUILD = '2026-06-13-lite-local-radar-hide';
+const FRONTEND_BUILD = '2026-06-17-live-track-click';
 const AREA_BOUNDARY_WARNING_DEG = 0.02;
 const EARTH_RADIUS_KM = 6371.0088;
 const MAX_AZIMUTH_SECTOR_COUNT = 72;
@@ -103,6 +103,8 @@ const DEFAULT_PATH_STYLE = {
     dash_array: null,
 };
 const VALID_MARKER_SHAPES = new Set(['circle', 'square', 'diamond', 'triangle']);
+window.__BY_WEATHER_FRONTEND_BUILD__ = FRONTEND_BUILD;
+window.__BY_WEATHER_LAYER_FIX__ = 'live-track-click-v1';
 console.info('[frontend build]', FRONTEND_BUILD);
 const state = {
     currentUser: null,
@@ -150,6 +152,7 @@ const state = {
     replayLastHeatmapRenderAt: 0,
     importantPoints: DEFAULT_IMPORTANT_POINTS,
     importantPointsLoaded: false,
+    fixedOverlayEnabled: false,
     mapMiniMode: false,
     mapPanelTop: 0,
     mapPanelHeight: 0,
@@ -195,6 +198,7 @@ const elements = {
     applyWindow: document.getElementById('apply-window'),
     dataSourceDate: document.getElementById('data-source-date'),
     dataSourceNum: document.getElementById('data-source-num'),
+    dataSourceAircraft: document.getElementById('data-source-aircraft'),
     applyDataSource: document.getElementById('apply-data-source'),
     dataSourceNote: document.getElementById('data-source-note'),
     liveModeBtn: document.getElementById('live-mode-btn'),
@@ -209,6 +213,7 @@ const elements = {
     himawariOverlayEnabled: document.getElementById('himawari-overlay-enabled'),
     radarOverlayEnabled: document.getElementById('radar-overlay-enabled'),
     radarCoverageEnabled: document.getElementById('radar-coverage-enabled'),
+    fixedOverlayEnabled: document.getElementById('fixed-overlay-enabled'),
     radarOpacity: document.getElementById('radar-opacity'),
     radarOpacityValue: document.getElementById('radar-opacity-value'),
     localRadarEnabled: document.getElementById('local-radar-enabled'),
@@ -349,13 +354,13 @@ const map = L.map('track-map', {
     fadeAnimation: false,
 }).setView([30, 110], 6);
 map.createPane('fixedPathPane');
-map.getPane('fixedPathPane').style.zIndex = 420;
+map.getPane('fixedPathPane').style.zIndex = 505;
 map.getPane('fixedPathPane').style.pointerEvents = 'auto';
 map.createPane('fixedPointPane');
-map.getPane('fixedPointPane').style.zIndex = 430;
+map.getPane('fixedPointPane').style.zIndex = 506;
 map.getPane('fixedPointPane').style.pointerEvents = 'auto';
 map.createPane('fixedTooltipPane');
-map.getPane('fixedTooltipPane').style.zIndex = 455;
+map.getPane('fixedTooltipPane').style.zIndex = 507;
 map.getPane('fixedTooltipPane').style.pointerEvents = 'none';
 map.createPane('rainRadarPane');
 map.getPane('rainRadarPane').style.zIndex = 500;
@@ -373,10 +378,10 @@ map.createPane('trackPane');
 map.getPane('trackPane').style.zIndex = 620;
 map.getPane('trackPane').style.pointerEvents = 'auto';
 map.createPane('importantPathPane');
-map.getPane('importantPathPane').style.zIndex = 420;
+map.getPane('importantPathPane').style.zIndex = 505;
 map.getPane('importantPathPane').style.pointerEvents = 'none';
 map.createPane('areaBoundaryPane');
-map.getPane('areaBoundaryPane').style.zIndex = 505;
+map.getPane('areaBoundaryPane').style.zIndex = 610;
 map.getPane('areaBoundaryPane').style.pointerEvents = 'none';
 map.createPane('measurePane');
 map.getPane('measurePane').style.zIndex = 700;
@@ -384,11 +389,68 @@ map.getPane('measurePane').style.pointerEvents = 'none';
 map.createPane('anchorPane');
 map.getPane('anchorPane').style.zIndex = 710;
 map.getPane('anchorPane').style.pointerEvents = 'none';
+const areaBoundaryRenderer = L.svg({ pane: 'areaBoundaryPane' });
+const importantPathRenderer = L.svg({ pane: 'importantPathPane' });
+const trackRenderer = L.canvas({ pane: 'trackPane' });
 let baseTileLayer = null;
 let himawariLayer = null;
 let rainRadarLayer = null;
 let rainRadarCoverageLayer = null;
 const localRadarLayers = {};
+
+window.__BY_WEATHER_DEBUG_PANES__ = () => {
+    const paneNames = [
+        'tilePane',
+        'overlayPane',
+        'fixedPathPane',
+        'fixedPointPane',
+        'fixedTooltipPane',
+        'himawariPane',
+        'rainCoveragePane',
+        'rainRadarPane',
+        'localRadarPane',
+        'trackPane',
+        'importantPathPane',
+        'areaBoundaryPane',
+        'measurePane',
+        'anchorPane',
+        'tooltipPane',
+    ];
+    const paneInfo = {};
+    paneNames.forEach((name) => {
+        const pane = map.getPane(name);
+        paneInfo[name] = pane ? {
+            className: pane.className,
+            zIndex: window.getComputedStyle(pane).zIndex,
+            inlineZIndex: pane.style.zIndex,
+            childCount: pane.children.length,
+        } : null;
+    });
+    const rendererInfo = (renderer) => {
+        const container = renderer && renderer._container;
+        return container ? {
+            tagName: container.tagName,
+            className: container.className,
+            parentClassName: container.parentElement ? container.parentElement.className : null,
+            parentZIndex: container.parentElement ? window.getComputedStyle(container.parentElement).zIndex : null,
+        } : null;
+    };
+    return {
+        build: window.__BY_WEATHER_FRONTEND_BUILD__,
+        layerFix: window.__BY_WEATHER_LAYER_FIX__,
+        panes: paneInfo,
+        renderers: {
+            areaBoundary: rendererInfo(areaBoundaryRenderer),
+            importantPath: rendererInfo(importantPathRenderer),
+            track: rendererInfo(trackRenderer),
+        },
+        layers: {
+            areaBoundaryCount: areaBoundaryLayer ? areaBoundaryLayer.getLayers().length : null,
+            rainRadarPaneChildren: map.getPane('rainRadarPane') ? map.getPane('rainRadarPane').children.length : null,
+        },
+    };
+};
+
 const rainRadarStatus = L.control({ position: 'bottomleft' });
 rainRadarStatus.onAdd = () => {
     const div = L.DomUtil.create('div', 'rain-radar-status');
@@ -820,13 +882,19 @@ async function refreshRadarLayer(force = false) {
     }
 }
 
-const trackLine = L.polyline([], { color: '#d9480f', weight: 3, pane: 'trackPane' }).addTo(map);
+const trackLine = L.polyline([], {
+    color: '#d9480f',
+    weight: 3,
+    pane: 'trackPane',
+    renderer: trackRenderer,
+}).addTo(map);
 const trackMarker = L.circleMarker([0, 0], {
     radius: 4,
     color: '#0f766e',
     fillColor: '#14b8a6',
     fillOpacity: 0.95,
     pane: 'trackPane',
+    renderer: trackRenderer,
 }).addTo(map);
 const selectedTrackMarker = L.circleMarker([0, 0], {
     radius: 6,
@@ -834,6 +902,7 @@ const selectedTrackMarker = L.circleMarker([0, 0], {
     fillColor: '#fecaca',
     fillOpacity: 0.85,
     pane: 'trackPane',
+    renderer: trackRenderer,
 }).addTo(map);
 const trackPointLayer = L.layerGroup().addTo(map);
 const importantPointLayer = L.layerGroup().addTo(map);
@@ -1034,6 +1103,7 @@ function renderAzimuthSectors(point, lat, lon, style, radii) {
             opacity: 0.66,
             dashArray: '4 8',
             pane: 'importantPathPane',
+            renderer: importantPathRenderer,
             interactive: false,
         }).addTo(importantPathLayer);
 
@@ -1064,6 +1134,7 @@ function renderCoverageRadii(point, lat, lon, style) {
             fillOpacity: 0.025,
             dashArray: '8 6',
             pane: 'importantPathPane',
+            renderer: importantPathRenderer,
             interactive: false,
         }).addTo(importantPathLayer);
 
@@ -1165,9 +1236,13 @@ function fitInitialMapView(trackCoords = []) {
     });
 }
 
-function updateImportantOverlayStatus(pointCount, overlayCount, warningCount) {
+function updateImportantOverlayStatus(pointCount, overlayCount, warningCount, mode = 'on') {
     const node = document.querySelector('.important-overlay-status');
     if (!node) {
+        return;
+    }
+    if (mode === 'off') {
+        node.textContent = 'fixed overlays off';
         return;
     }
     const warningText = warningCount ? ` | warnings ${warningCount}` : '';
@@ -1177,12 +1252,17 @@ function updateImportantOverlayStatus(pointCount, overlayCount, warningCount) {
 function renderImportantPoints() {
     importantPointLayer.clearLayers();
     importantPathLayer.clearLayers();
+    if (!state.fixedOverlayEnabled) {
+        updateImportantOverlayStatus(0, 0, 0, 'off');
+        return;
+    }
     const data = state.importantPoints || DEFAULT_IMPORTANT_POINTS;
     const points = Array.isArray(data.points) ? data.points : [];
     const paths = Array.isArray(data.paths) ? data.paths : [];
     const warnings = Array.isArray(data.warnings) ? data.warnings : [];
     const typeStyles = data.type_styles && typeof data.type_styles === 'object' ? data.type_styles : {};
     const pathStyles = data.path_styles && typeof data.path_styles === 'object' ? data.path_styles : {};
+    const canRenderRadarRange = hasPermission('view_local_radar') && state.localRadarEnabled;
     let renderedPointCount = 0;
     let renderedPathCount = 0;
     let renderedRadiusCount = 0;
@@ -1229,9 +1309,11 @@ function renderImportantPoints() {
             `</div>`
         );
         importantPointLayer.addLayer(marker);
-        const overlayCounts = renderCoverageRadii(point, lat, lon, style);
-        renderedRadiusCount += overlayCounts.radiusCount;
-        renderedAzimuthCount += overlayCounts.azimuthCount;
+        if (canRenderRadarRange) {
+            const overlayCounts = renderCoverageRadii(point, lat, lon, style);
+            renderedRadiusCount += overlayCounts.radiusCount;
+            renderedAzimuthCount += overlayCounts.azimuthCount;
+        }
         renderedPointCount += 1;
     });
 
@@ -1263,6 +1345,7 @@ function renderImportantPoints() {
             lineJoin: 'round',
             lineCap: 'round',
             pane: 'importantPathPane',
+            renderer: importantPathRenderer,
             interactive: false,
         };
         const line = isClosedPath
@@ -2114,6 +2197,7 @@ function addAreaBoundaryLine(points, label) {
         opacity: 0.92,
         dashArray: '7 6',
         pane: 'areaBoundaryPane',
+        renderer: areaBoundaryRenderer,
         interactive: false,
     }).addTo(areaBoundaryLayer);
     line.bindTooltip(label, {
@@ -2150,6 +2234,7 @@ function drawAreaBoundary(boundary = state.areaBoundary) {
             fillOpacity: 0.04,
             dashArray: '7 6',
             pane: 'areaBoundaryPane',
+            renderer: areaBoundaryRenderer,
             interactive: false,
         }).addTo(areaBoundaryLayer);
     }
@@ -2667,6 +2752,13 @@ function rebuildReplayLayer(replayEntries) {
             fillColor: '#ffffff',
             fillOpacity: 0.25,
             pane: 'trackPane',
+            renderer: trackRenderer,
+        });
+        marker.on('click', (event) => {
+            if (event && event.originalEvent) {
+                L.DomEvent.stop(event.originalEvent);
+            }
+            selectHistoricalTrackPoint(item.frame.time);
         });
         marker.bindTooltip(formatTrackTooltip(item), { direction: 'top', opacity: 0.92 });
         trackPointLayer.addLayer(marker);
@@ -2815,6 +2907,16 @@ function selectFrameByTime(time, mode = state.mode) {
     requestRender();
 }
 
+function selectHistoricalTrackPoint(time) {
+    if (!time) {
+        return;
+    }
+    if (state.mode === 'replay') {
+        stopReplay();
+    }
+    selectFrameByTime(time, state.mode);
+}
+
 function updateTrackMap(displayFrames) {
     const entries = getFilteredTrackEntries(displayFrames);
     const points = entries.map((item) => [item.data.lat, item.data.lon]);
@@ -2855,12 +2957,13 @@ function updateTrackMap(displayFrames) {
             fillColor: '#ffffff',
             fillOpacity: 0.2,
             pane: 'trackPane',
+            renderer: trackRenderer,
         });
-        marker.on('click', () => {
-            if (state.mode === 'live') {
-                setMode('replay');
+        marker.on('click', (event) => {
+            if (event && event.originalEvent) {
+                L.DomEvent.stop(event.originalEvent);
             }
-            selectFrameByTime(item.frame.time, 'replay');
+            selectHistoricalTrackPoint(item.frame.time);
         });
         marker.bindTooltip(formatTrackTooltip(item), { direction: 'top', opacity: 0.92 });
         trackPointLayer.addLayer(marker);
@@ -3170,11 +3273,16 @@ function applyDataSourceToInputs(data) {
     if (elements.dataSourceNum) {
         elements.dataSourceNum.value = String(data.num || 1);
     }
+    if (elements.dataSourceAircraft) {
+        elements.dataSourceAircraft.value = data.aircraft_model || data.default_aircraft_model || 'B11';
+    }
     if (elements.dataSourceNote) {
+        const model = data.aircraft_model || '--';
+        const defaultModel = data.default_aircraft_model || 'B11';
         const defaultText = data.default_date1 && data.default_num
-            ? `默认 ${data.default_date1} / ${data.default_num} 架次`
+            ? `默认 ${data.default_date1} / ${data.default_num} 架次 / ${defaultModel}`
             : '重启后恢复默认日期';
-        elements.dataSourceNote.textContent = `当前 ${data.date1 || '--'} / ${data.num || '--'} 架次；${defaultText}`;
+        elements.dataSourceNote.textContent = `当前 ${data.date1 || '--'} / ${data.num || '--'} 架次 / ${model}；${defaultText}`;
     }
 }
 
@@ -3202,12 +3310,16 @@ async function applyDataSource() {
     if (!elements.dataSourceDate || !elements.dataSourceNum) {
         return;
     }
+    const aircraftModel = elements.dataSourceAircraft
+        ? elements.dataSourceAircraft.value.trim().toUpperCase()
+        : 'B11';
     const response = await fetch('/api/data-source', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             date1: elements.dataSourceDate.value,
             num: Number(elements.dataSourceNum.value) || 1,
+            aircraft_model: aircraftModel || 'B11',
         }),
     });
     if (!response.ok) {
@@ -3481,6 +3593,13 @@ function bindEvents() {
             refreshRadarLayer(true);
         });
     }
+    if (elements.fixedOverlayEnabled) {
+        state.fixedOverlayEnabled = elements.fixedOverlayEnabled.checked;
+        elements.fixedOverlayEnabled.addEventListener('change', () => {
+            state.fixedOverlayEnabled = elements.fixedOverlayEnabled.checked;
+            renderImportantPoints();
+        });
+    }
     if (elements.radarOpacity) {
         elements.radarOpacity.addEventListener('input', () => {
             setRadarOpacity((Number(elements.radarOpacity.value) || 0) / 100);
@@ -3491,6 +3610,7 @@ function bindEvents() {
         elements.localRadarEnabled.addEventListener('change', () => {
             state.localRadarEnabled = elements.localRadarEnabled.checked;
             refreshLocalRadarLayer(true);
+            renderImportantPoints();
         });
     }
     if (elements.localRadarPpiEnabled) {
@@ -3645,12 +3765,7 @@ function bindEvents() {
         if (!nearest) {
             return;
         }
-        if (state.mode !== 'replay') {
-            setMode('replay');
-        }
-        stopReplay();
-        state.selectedFrameTime = nearest.frame.time;
-        requestRender();
+        selectHistoricalTrackPoint(nearest.frame.time);
     });
     map.on('movestart move moveend zoomstart zoom zoomend dragstart drag dragend', () => {
         pauseMapRefreshByInteraction();

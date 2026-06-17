@@ -255,6 +255,15 @@ def _parse_runtime_num(value) -> int:
     return num
 
 
+def _parse_runtime_aircraft_model(value: str) -> str:
+    model = str(value or '').strip().upper()
+    if not model:
+        raise HTTPException(status_code=400, detail='aircraft_model is required')
+    if not all(char.isalnum() or char in ('-', '_') for char in model):
+        raise HTTPException(status_code=400, detail='aircraft_model contains unsupported characters')
+    return model
+
+
 def _clear_runtime_caches():
     store.reset()
     local_radar_cache['loaded_at'] = 0.0
@@ -736,7 +745,10 @@ async def update_data_source(request: Request):
         payload = {}
     date1 = _parse_runtime_date(payload.get('date1') or payload.get('date'))
     num = _parse_runtime_num(payload.get('num', 1))
-    source = set_runtime_data_source(date1, num)
+    aircraft_model = _parse_runtime_aircraft_model(
+        payload.get('aircraft_model') or payload.get('aircraftModel') or config.AIRCRAFT_MODEL
+    )
+    source = set_runtime_data_source(date1, num, aircraft_model)
 
     global local_radar_base_dir
     local_radar_base_dir = _local_radar_base_dir_for_date(source['date2'])

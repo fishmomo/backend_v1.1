@@ -16,6 +16,7 @@ _env_port = os.getenv('PORT')
 _env_data_base = os.getenv('BACKEND_DATA_BASE_DIR')
 _env_date1 = os.getenv('BACKEND_DATE1')
 _env_num = os.getenv('BACKEND_NUM')
+_env_aircraft_model = os.getenv('BACKEND_AIRCRAFT_MODEL')
 _env_fallback = os.getenv('BACKEND_ALLOW_SIMULATED_FALLBACK')
 _env_secret = os.getenv('BACKEND_AUTH_SECRET_KEY')
 _env_radar_base = os.getenv('BACKEND_LOCAL_RADAR_BASE_DIR')
@@ -33,16 +34,35 @@ SIM_OUTPUT_DIR = Path('simulated_data')
 DATE1 = _env_date1 or "2026-05-30"
 DATE2 = DATE1.replace('-', '')
 NUM = int(_env_num) if _env_num else 1
+AIRCRAFT_MODEL = (_env_aircraft_model or 'B11').strip().upper()
 
 if _env_data_base:
     DATA_BASE_DIR = Path(_env_data_base)
 else:
-    DATA_BASE_DIR = Path(f'G:/B11')
+    DATA_BASE_DIR = Path(f'G:/{AIRCRAFT_MODEL}')
 
-TRACK_FILE = DATA_BASE_DIR / f'{DATE1}_{NUM}' / f'{DATE2}_{NUM}_B11.csv'
-SCDP_FILE = DATA_BASE_DIR / f'{DATE1}_{NUM}' / 'WR_SCDP' / f'SCDP_B11_{DATE2}.csv'
-ICFP_FILE = DATA_BASE_DIR / f'{DATE1}_{NUM}' / 'WR_ICFP' / f'ICFP_{DATE2}_{NUM}_B11.csv'
-MWR_FILE = DATA_BASE_DIR / f'{DATE1}_{NUM}' / 'WR_YMWR' / f'Z_UPAR_I_59134_{DATE2}000000_P_YMWR_TK001_CP_D.TXT'
+def build_data_source_paths(date1: str, num: int, aircraft_model: str = AIRCRAFT_MODEL):
+    date2 = date1.replace('-', '')
+    model = (aircraft_model or AIRCRAFT_MODEL).strip().upper()
+    model_base_dir = DATA_BASE_DIR
+    if DATA_BASE_DIR.name.upper() == AIRCRAFT_MODEL:
+        model_base_dir = DATA_BASE_DIR.parent / model
+    return {
+        'date1': date1,
+        'date2': date2,
+        'num': int(num),
+        'aircraft_model': model,
+        'track_file': model_base_dir / f'{date1}_{num}' / f'{date2}_{num}_{model}.csv',
+        'scdp_file': model_base_dir / f'{date1}_{num}' / 'WR_SCDP' / f'SCDP_{model}_{date2}.csv',
+        'icfp_file': model_base_dir / f'{date1}_{num}' / 'WR_ICFP' / f'ICFP_{date2}_{num}_{model}.csv',
+        'mwr_file': model_base_dir / f'{date1}_{num}' / 'WR_YMWR' / f'Z_UPAR_I_59134_{date2}000000_P_YMWR_TK001_CP_D.TXT',
+    }
+
+_DEFAULT_SOURCE_PATHS = build_data_source_paths(DATE1, NUM, AIRCRAFT_MODEL)
+TRACK_FILE = _DEFAULT_SOURCE_PATHS['track_file']
+SCDP_FILE = _DEFAULT_SOURCE_PATHS['scdp_file']
+ICFP_FILE = _DEFAULT_SOURCE_PATHS['icfp_file']
+MWR_FILE = _DEFAULT_SOURCE_PATHS['mwr_file']
 
 # Data source policy
 ALLOW_SIMULATED_FALLBACK = (_env_fallback or 'false').lower() in ('1', 'true', 'yes')

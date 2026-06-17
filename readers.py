@@ -16,28 +16,19 @@ FALLBACK_MWR_FILE = FALLBACK_DATA_DIR / 'mwr_realtime.txt'
 DATA_SOURCE_STATE = {}
 
 
-def _build_source_paths(date1: str, num: int) -> Dict[str, object]:
-    date2 = date1.replace('-', '')
-    return {
-        'date1': date1,
-        'date2': date2,
-        'num': int(num),
-        'track_file': config.DATA_BASE_DIR / f'{date1}_{num}' / f'{date2}_{num}_B11.csv',
-        'scdp_file': config.DATA_BASE_DIR / f'{date1}_{num}' / 'WR_SCDP' / f'SCDP_B11_{date2}.csv',
-        'icfp_file': config.DATA_BASE_DIR / f'{date1}_{num}' / 'WR_ICFP' / f'ICFP_{date2}_{num}_B11.csv',
-        'mwr_file': config.DATA_BASE_DIR / f'{date1}_{num}' / 'WR_YMWR' / f'Z_UPAR_I_59134_{date2}000000_P_YMWR_TK001_CP_D.TXT',
-    }
-
-
-def set_runtime_data_source(date1: str, num: int) -> Dict[str, object]:
+def set_runtime_data_source(date1: str, num: int, aircraft_model: Optional[str] = None) -> Dict[str, object]:
     DATA_SOURCE_STATE.clear()
-    DATA_SOURCE_STATE.update(_build_source_paths(date1, num))
+    DATA_SOURCE_STATE.update(config.build_data_source_paths(
+        date1,
+        num,
+        aircraft_model or config.AIRCRAFT_MODEL,
+    ))
     return get_runtime_data_source()
 
 
 def get_runtime_data_source() -> Dict[str, object]:
     if not DATA_SOURCE_STATE:
-        set_runtime_data_source(config.DATE1, config.NUM)
+        set_runtime_data_source(config.DATE1, config.NUM, config.AIRCRAFT_MODEL)
     return dict(DATA_SOURCE_STATE)
 
 
@@ -47,9 +38,11 @@ def get_runtime_data_source_payload() -> Dict[str, object]:
         'date1': source['date1'],
         'date2': source['date2'],
         'num': source['num'],
+        'aircraft_model': source['aircraft_model'],
         'default_date1': config.DATE1,
         'default_date2': config.DATE2,
         'default_num': config.NUM,
+        'default_aircraft_model': config.AIRCRAFT_MODEL,
         'track_file': str(source['track_file']),
         'scdp_file': str(source['scdp_file']),
         'icfp_file': str(source['icfp_file']),

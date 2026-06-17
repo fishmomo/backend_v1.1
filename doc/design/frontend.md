@@ -29,7 +29,7 @@
 登录后前端会调用 `/api/me` 获取当前账号和权限：
 
 - `full` 角色显示完整三列指挥界面：左控制栏、中央地图/时序图、右侧传感器图表。
-- `lite` 角色参考 `backend_lite` 的地图态势界面，给 `.dashboard` 添加 `dashboard-lite`、给 `.center-stack` 添加 `center-stack-lite`，隐藏时序图和右侧传感器图表，并让航线/卫星地图扩大填充原时序图和右侧图表区域。
+- `lite` 角色参考 `backend_lite` 的地图态势界面，给 `.dashboard` 添加 `dashboard-lite`、给 `.center-stack` 添加 `center-stack-lite`，隐藏时序图和右侧传感器图表，并让航线/卫星地图扩大填充原时序图和右侧图表区域；CSS 对 lite 下的图表区域有兜底隐藏规则，窗口缩小时右侧数据窗口也不能露出。
 - `lite` 角色隐藏本地云雷达相关 UI，包括总开关、PPI、RPI、云雷达透明度、地图状态控件和色标，不发起 `/api/local-radar/latest` 请求。本地云雷达控件在 CSS 初始状态下默认隐藏，仅当 `/api/me` 返回的权限包含 `view_local_radar` 后显示，避免 Lite 页面加载早期露出控件。
 - 顶部账号显示使用登录用户名，例如 lite 账号显示为 `lite`。
 
@@ -77,7 +77,7 @@ DOM 引用集中在 `dom` 对象，图表实例集中在 `charts` 对象。
 
 实时模式下，WebSocket 新帧会进入历史数组并刷新地图与图表。回放模式下，用户通过 slider 或播放按钮选取历史帧。
 
-full 和 lite 账号都显示数据日期与架次输入。点击“应用日期”后前端调用 `/api/data-source`，清空当前已加载历史帧、回放缓存和地图轨迹，再重新拉取状态、地图配置和历史数据。该选择只在当前进程内生效，重启后恢复 `config.py` 默认日期和架次。
+full 和 lite 账号都显示数据日期、架次与机型输入。点击“应用日期”后前端调用 `/api/data-source`，清空当前已加载历史帧、回放缓存和地图轨迹，再重新拉取状态、地图配置和历史数据。该选择只在当前进程内生效，重启后恢复 `config.py` 默认日期、架次和机型。
 
 ## 地图图层
 
@@ -100,7 +100,9 @@ Leaflet 地图包含：
 | 锚点 | 用户点击生成 |
 | 区域边界 | 用户输入经纬度边界生成 |
 
-`app.js` 为 RainViewer、本地云雷达、Himawari、重要路径等建立了独立 pane，便于控制层级和点击穿透。地图业务图层从上到下为：锚点、测距、航迹/飞机、本地云雷达、区域边界、RainViewer 雷达、RainViewer 覆盖范围、Himawari。PPI 与 RPI 同时开启时，前端分别请求最新数据并以 Canvas 绘制，绘制顺序固定为 PPI 先画、RPI 后画。
+`app.js` 为 RainViewer、本地云雷达、Himawari、重要路径等建立了独立 pane，便于控制层级和点击穿透。地图业务图层从上到下为：锚点、测距、航迹/飞机、区域边界、本地云雷达、重要路径/固定路径、RainViewer 雷达、RainViewer 覆盖范围、Himawari。区域边界使用绑定到 `areaBoundaryPane` 的 SVG renderer；重要路径、固定路径、雷达探测范围圆周和方位角线使用绑定到 `importantPathPane` 的 SVG renderer；航迹线、飞机点和回放轨迹点使用绑定到 `trackPane` 的 Canvas renderer，避免 `preferCanvas` 下被瓦片图层盖住。PPI 与 RPI 同时开启时，前端分别请求最新数据并以 Canvas 绘制，绘制顺序固定为 PPI 先画、RPI 后画。
+
+固定空域/重要路径默认不直接渲染，由左侧“空域显示”勾选框控制；勾选后显示 `reference/important_points.json` 中的固定空域、重要点位和重要路径。雷达探测范围圆周和方位角线额外受本地云雷达权限与“叠加本地云雷达”开关联动控制，lite 账号不会绘制该范围辅助线。
 
 本地云雷达刷新机制：
 

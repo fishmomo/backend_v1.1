@@ -19,18 +19,18 @@ BY Weather Backend v1.1 是一个面向无人机气象观测与飞行态势展�
 
 ## 快速运行
 
-项目使用 Conda 管理 Python 运行环境，目标 Python 版本为 3.9。首次部署或新机器恢复环境：
+项目使用 Conda 管理 Python 运行环境，本地模拟远端 app 机器的环境名为 `byw_py314`，目标 Python 版本为 3.14。首次部署或新机器恢复环境：
 
 ```bash
 conda env create -f environment.yml
-conda activate py3.9
+conda activate byw_py314
 ```
 
-已有 `py3.9` 环境时更新依赖：
+已有 `byw_py314` 环境时更新依赖：
 
 ```bash
-conda env update -n py3.9 -f environment.yml --prune
-conda activate py3.9
+conda env update -n byw_py314 -f environment.yml --prune
+conda activate byw_py314
 ```
 
 开发态直接启动 FastAPI：
@@ -60,7 +60,7 @@ python launcher.py
 - **雷达与卫星叠加**：支持 RainViewer 全球雷达、RainViewer 覆盖范围、Himawari-9 云图、本地云雷达 PPI/RPI。
 - **本地云雷达**：从 `PPICMA` / `RPICMA` 目录读取 CMA/Z_RADA 径向基数据，按最新文件叠加到地图，PPI 在下层、RPI 在上层，带 dBZ 色标和扫描时间显示。
 - **登录与权限分区**：支持内置账号、全量视图和精简视图。全量账号可查看全部图表和本地云雷达；精简账号使用接近 `backend_lite` 的大地图态势界面，并隐藏本地云雷达控件，后端 API 与 WebSocket 同步过滤 SCDP/ICFP/MWR 数据。
-- **运行时日期/架次切换**：full 与 lite 账号都可在页面临时切换数据日期和架次；切换会清空前后端已加载缓存并按新路径读取，但不会写回 `config.py`，重启后仍使用默认日期和架次。
+- **运行时日期/架次/机型切换**：full 与 lite 账号都可在页面临时切换数据日期、架次和机型；切换会清空前后端已加载缓存并按新路径读取，但不会写回 `config.py`，重启后仍使用默认日期、架次和机型。
 - **交互工具**：支持历史回放、地图点击选帧、测距、锚点、锚点表格和 TXT 导出、区域边界提示。
 - **图表展示**：展示 SCDP/ICFP 时序和 bins，MWR 标量、温度/湿度/水汽密度/液态水廓线，以及饱和区热力图。
 
@@ -86,7 +86,7 @@ python launcher.py
 
 ```text
 backend_v1.1/
-  environment.yml         # Conda Python 3.9 环境与依赖清单
+  environment.yml         # Conda Python 3.14 环境与主要依赖清单
   launcher.py             # 单机启动器：运行时目录、日志、外部 config、浏览器
   app.py                  # FastAPI 入口、后台轮询、HTTP API、WebSocket、静态资源
   config.py               # 业务文件路径、轮询/对齐参数、地图/雷达/影像配置
@@ -131,8 +131,8 @@ python get_radar/radar_latlon_grid_demo.py
 
 主要配置集中在 [config.py](./config.py)：
 
-- `DATE1`、`DATE2`、`NUM`：业务日期和架次编号，Track/SCDP/ICFP/MWR 与本地云雷达路径都会使用这些日期变量。
-- `DATA_ROOT`、`build_data_source_paths()`：四类业务文件路径生成规则。`readers.py` 不硬编码业务目录或文件命名模板，只读取该函数返回的路径。
+- `DATE1`、`DATE2`、`NUM`、`AIRCRAFT_MODEL`：业务日期、架次编号和默认机型，Track/SCDP/ICFP/MWR 与本地云雷达路径都会使用这些日期变量。
+- `DATA_BASE_DIR`、`build_data_source_paths()`：四类业务文件路径生成规则。`readers.py` 不硬编码业务目录或文件命名模板，只读取该函数返回的路径。
 - `TRACK_FILE`、`SCDP_FILE`、`ICFP_FILE`、`MWR_FILE`：由默认日期/架次生成的业务数据输入文件。
 - `ALLOW_SIMULATED_FALLBACK`：主业务文件缺失时是否允许回退到 `simulated_data/`。
 - `POLL_INTERVAL_SEC`：后台业务数据轮询间隔。
@@ -150,7 +150,7 @@ python get_radar/radar_latlon_grid_demo.py
 - `LOCAL_RADAR_LAT`、`LOCAL_RADAR_LON`、`LOCAL_RADAR_SITE_NAME`：本地云雷达站点位置和名称。
 - `IMPORTANT_POINTS_FILE`：重点点位、重点路径、探测半径和方位线配置。
 - `AUTH_ENABLED`、`AUTH_USERS`、`ROLE_PERMISSIONS`：登录开关、内置账号和角色权限配置。
-- 页面“数据日期/架次”只做当前运行时临时切换，不写回 `config.py`；重启后仍使用上面的默认 `DATE1`、`DATE2`、`NUM`。
+- 页面“数据日期/架次/机型”只做当前运行时临时切换，不写回 `config.py`；重启后仍使用上面的默认 `DATE1`、`DATE2`、`NUM`、`AIRCRAFT_MODEL`。
 
 本地云雷达读取路径示例：
 
@@ -166,7 +166,7 @@ D:\APP\radar_uploader_split\downloads\20260529\RPICMA
 - `GET /api/latest`：返回最新对齐帧。
 - `GET /api/history?seconds=300`：返回最近窗口内的对齐帧列表。
 - `GET /api/map-config`：返回底图、全球雷达、本地云雷达、Himawari 等地图配置。
-- `GET /api/data-source`、`POST /api/data-source`：查看或临时切换当前运行时数据日期和架次，不持久化。
+- `GET /api/data-source`、`POST /api/data-source`：查看或临时切换当前运行时数据日期、架次和机型，不持久化。
 - `GET /api/himawari/latest`：返回最新 Himawari 图层元数据。
 - `GET /api/local-radar/latest?product=PPI`：读取并返回最新本地云雷达 PPI/RPI 极坐标数据，仅具备 `view_local_radar` 权限的账号可访问。
 - `GET /api/important-points`：返回重点点位、重点路径、探测半径和方位线配置。
