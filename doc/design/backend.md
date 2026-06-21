@@ -176,7 +176,13 @@ manager = ConnectionManager()
 
 ### POST `/api/login`
 
-校验 `config.AUTH_USERS` 中的内置账号，成功后写入签名会话 cookie。账号角色来自配置中的 `role` 字段。
+校验外部账号配置中的账号和密码哈希，成功后写入签名会话 cookie。账号角色来自配置中的 `role` 字段。账号来源优先级为：
+
+1. `BACKEND_AUTH_USERS_JSON` 环境变量中的 JSON 数组。
+2. `BACKEND_AUTH_USERS_FILE` 指向的 JSON 文件。
+3. 未配置外部账号时，使用源码内仅含密码哈希的本地兜底账号。
+
+密码哈希格式推荐 `pbkdf2_sha256$iterations$salt$hash`，可用 `python scripts/hash_password.py` 生成。旧的 `sha256:` 和明文字段仅为兼容历史配置保留，不建议继续使用。
 
 ### POST `/api/logout`
 

@@ -22,6 +22,7 @@ DEFAULT_DIRS = (
 )
 DEFAULT_FILES = (
     ".env.example",
+    "auth_users.example.json",
     "CLAUDE.md",
     "DECISIONS.md",
     "Makefile",

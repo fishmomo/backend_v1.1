@@ -1,0 +1,14 @@
+[
+  {
+    "username": "admin",
+    "password_hash": "replace-with-pbkdf2-hash",
+    "display_name": "full",
+    "role": "full"
+  },
+  {
+    "username": "lite",
+    "password_hash": "replace-with-pbkdf2-hash",
+    "display_name": "lite",
+    "role": "lite"
+  }
+]

@@ -12,6 +12,7 @@ dependencies = [
     "pandas>=2.3",
     "xarray>=2023.6",
     "requests>=2.32",
+    "websockets>=15",
 ]
 
 [build-system]

@@ -2,6 +2,8 @@ import base64
 import hashlib
 import hmac
 import json
+import os
+import secrets
 import time
 from typing import Optional
 
@@ -12,17 +14,18 @@ COOKIE_NAME = 'by_weather_session'
 DEFAULT_AUTH_USERS = [
     {
         'username': 'admin',
-        'password': 'admin123',
+        'password_hash': 'pbkdf2_sha256$260000$33c4785ec8e60aa6c0f49bd68bd347b3$f6675600c506ed02f6d490a2b5777034d7333f4a29005a9b8e5c5087d400ff53',
         'display_name': '全量账号',
         'role': 'full',
     },
     {
         'username': 'lite',
-        'password': 'lite123',
+        'password_hash': 'pbkdf2_sha256$260000$8ff35c6730f690db17fbcba15a07ee2a$97758d2ab869d864d0300b9c3b75cede6a51240ead8f3f1fe99e121eef43fe1a',
         'display_name': '精简账号',
         'role': 'lite',
     },
 ]
+PBKDF2_ITERATIONS = 260_000
 
 
 def is_auth_enabled() -> bool:
@@ -66,21 +69,51 @@ def has_permission(user: Optional[dict], permission: str) -> bool:
     return permission in set(user.get('permissions') or role_permissions(user.get('role', 'lite')))
 
 
-def _hash_password(password: str) -> str:
+def hash_password(password: str, *, iterations: int = PBKDF2_ITERATIONS) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        'sha256',
+        str(password).encode('utf-8'),
+        salt.encode('ascii'),
+        iterations,
+    ).hex()
+    return f'pbkdf2_sha256${iterations}${salt}${digest}'
+
+
+def _hash_password_sha256(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 
 def _password_matches(password: str, stored: str) -> bool:
     stored = str(stored or '')
+    if stored.startswith('pbkdf2_sha256$'):
+        try:
+            _, iterations, salt, expected = stored.split('$', 3)
+            digest = hashlib.pbkdf2_hmac(
+                'sha256',
+                password.encode('utf-8'),
+                salt.encode('ascii'),
+                int(iterations),
+            ).hex()
+        except Exception:
+            return False
+        return hmac.compare_digest(digest, expected)
     if stored.startswith('sha256:'):
-        return hmac.compare_digest(_hash_password(password), stored.split(':', 1)[1])
+        return hmac.compare_digest(_hash_password_sha256(password), stored.split(':', 1)[1])
     return hmac.compare_digest(password, stored)
+
+
+def _configured_auth_users() -> list:
+    users = getattr(config, 'AUTH_USERS', None)
+    if users is not None:
+        return list(users)
+    return DEFAULT_AUTH_USERS
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:
     username = str(username or '').strip()
     password = str(password or '')
-    for item in getattr(config, 'AUTH_USERS', DEFAULT_AUTH_USERS):
+    for item in _configured_auth_users():
         if item.get('username') != username:
             continue
         if _password_matches(password, item.get('password') or item.get('password_hash')):

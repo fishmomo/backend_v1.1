@@ -33,6 +33,8 @@ INSTALL_DIR="${2:-${INSTALL_DIR:-/opt/${TARGET_USER}/${REPO_NAME}}}"
 VENV_DIR="${INSTALL_DIR}/.venv"
 USER_SERVICE_DIR="/home/${TARGET_USER}/.config/systemd/user"
 SERVICE_FILE="${USER_SERVICE_DIR}/${SERVICE_NAME}.service"
+CURRENT_USER="$(id -un)"
+CURRENT_UID="$(id -u)"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -49,14 +51,39 @@ if ! id "${TARGET_USER}" >/dev/null 2>&1; then
   exit 1
 fi
 
+run_as_target() {
+  local command="$1"
+  if [ "${CURRENT_USER}" = "${TARGET_USER}" ]; then
+    bash -lc "${command}"
+  elif [ "${CURRENT_UID}" = "0" ]; then
+    su - "${TARGET_USER}" -c "${command}"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -u "${TARGET_USER}" bash -lc "${command}"
+  else
+    echo "Current user is ${CURRENT_USER}, target user is ${TARGET_USER}, and neither root nor sudo is available."
+    echo "Log in as ${TARGET_USER} or run this script as root."
+    exit 1
+  fi
+}
+
 echo "==> [1/5] Installing source files..."
-install -d -o "${TARGET_USER}" -g "${TARGET_USER}" "${INSTALL_DIR}"
+if [ "${CURRENT_UID}" = "0" ]; then
+  install -d -o "${TARGET_USER}" -g "${TARGET_USER}" "${INSTALL_DIR}"
+else
+  mkdir -p "${INSTALL_DIR}"
+fi
+if [ -d "${INSTALL_DIR}/src" ]; then
+  find "${INSTALL_DIR}/src" -type d -name '__pycache__' -prune -exec rm -rf {} +
+  find "${INSTALL_DIR}/src" -depth -type d -empty -delete
+fi
 SOURCE_REAL="$(cd "${SOURCE_DIR}" && pwd -P)"
 INSTALL_REAL="$(cd "${INSTALL_DIR}" && pwd -P)"
 
 if [ "${SOURCE_REAL}" != "${INSTALL_REAL}" ]; then
   rsync -a --delete "${SOURCE_DIR}/" "${INSTALL_DIR}/" \
     --exclude='.venv' \
+    --exclude='.env' \
+    --exclude='auth_users.json' \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='.git' \
@@ -66,38 +93,50 @@ if [ "${SOURCE_REAL}" != "${INSTALL_REAL}" ]; then
 else
   echo "    Source is already the install directory; skipping copy."
 fi
-chown -R "${TARGET_USER}:${TARGET_USER}" "${INSTALL_DIR}"
+if [ "${CURRENT_UID}" = "0" ]; then
+  chown -R "${TARGET_USER}:${TARGET_USER}" "${INSTALL_DIR}"
+fi
 
 echo "==> [2/5] Setting up .env..."
 if [ ! -f "${INSTALL_DIR}/.env" ]; then
   cp "${INSTALL_DIR}/.env.example" "${INSTALL_DIR}/.env"
-  chown "${TARGET_USER}:${TARGET_USER}" "${INSTALL_DIR}/.env"
+  if [ "${CURRENT_UID}" = "0" ]; then
+    chown "${TARGET_USER}:${TARGET_USER}" "${INSTALL_DIR}/.env"
+  fi
   echo "    Created ${INSTALL_DIR}/.env from .env.example"
 else
   echo "    .env already exists, keeping it"
 fi
 
 echo "==> [3/5] Restoring Python environment with uv..."
-su - "${TARGET_USER}" -c "
+run_as_target "
   set -e
   cd '${INSTALL_DIR}'
   command -v uv >/dev/null
-  uv venv .venv --python '${PYTHON_VERSION}'
+  if [ ! -x .venv/bin/python ]; then
+    uv venv .venv --python '${PYTHON_VERSION}'
+  fi
   uv sync --frozen --no-install-project --python '${PYTHON_VERSION}'
   .venv/bin/python -B -c 'import app; print(app.app.title)'
 "
 
 echo "==> [4/5] Installing systemd user service..."
-install -d -o "${TARGET_USER}" -g "${TARGET_USER}" "${USER_SERVICE_DIR}"
+if [ "${CURRENT_UID}" = "0" ]; then
+  install -d -o "${TARGET_USER}" -g "${TARGET_USER}" "${USER_SERVICE_DIR}"
+else
+  mkdir -p "${USER_SERVICE_DIR}"
+fi
 sed \
   -e "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
   -e "s|__VENV_DIR__|${VENV_DIR}|g" \
   "${INSTALL_DIR}/deploy/${SERVICE_NAME}.service" > "${SERVICE_FILE}"
-chown "${TARGET_USER}:${TARGET_USER}" "${SERVICE_FILE}"
+if [ "${CURRENT_UID}" = "0" ]; then
+  chown "${TARGET_USER}:${TARGET_USER}" "${SERVICE_FILE}"
+fi
 
 USER_UID="$(id -u "${TARGET_USER}")"
-su - "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user daemon-reload"
-su - "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user enable ${SERVICE_NAME}.service"
+run_as_target "XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user daemon-reload"
+run_as_target "XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user enable ${SERVICE_NAME}.service"
 
 echo "==> [5/5] Done."
 echo ""

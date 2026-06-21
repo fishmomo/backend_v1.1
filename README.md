@@ -36,7 +36,7 @@ conda activate byw_py314
 开发态直接启动 FastAPI：
 
 ```bash
-python -m uvicorn app:app --host 127.0.0.1 --port 8000
+python -m uvicorn app:app --host 127.0.0.1 --port 8010
 ```
 
 推荐使用启动器，获得与打包态一致的运行时目录、日志、外部配置加载和自动打开浏览器行为：
@@ -47,8 +47,8 @@ python launcher.py
 
 默认访问：
 
-- 页面：`http://127.0.0.1:8000`
-- API 文档：`http://127.0.0.1:8000/docs`
+- 页面：`http://127.0.0.1:8010`
+- API 文档：`http://127.0.0.1:8010/docs`
 
 远端 Linux app 机器不使用 Conda，使用机器上已有的 `uv` 按 `uv.lock` 快速恢复 `.venv`。本机打包后上传：
 
@@ -71,6 +71,17 @@ make status TARGET_USER=app
 
 `scripts/deploy.sh` 会创建 `.venv` 并执行 `uv sync --frozen --no-install-project --python 3.14`，不会修改 `pyproject.toml` 或 `uv.lock`。
 
+如果远端已经部署在 `/opt/yujie/python_project`，建议先解压到临时目录，再同步更新到正式目录，避免半解压状态污染正在运行的目录：
+
+```bash
+rm -rf /tmp/backend-v1-update
+mkdir -p /tmp/backend-v1-update
+tar -xzf /tmp/backend-v1-20260617.tar.gz -C /tmp/backend-v1-update --strip-components=1
+cd /tmp/backend-v1-update
+sudo bash ./scripts/deploy.sh yujie /opt/yujie/python_project
+sudo -u yujie env XDG_RUNTIME_DIR=/run/user/$(id -u yujie) systemctl --user restart backend-v1
+```
+
 ## 核心能力
 
 - **实时数据接入**：增量读取 Track、SCDP、ICFP、MWR 四类业务文件，支持业务路径配置和模拟数据备用源。
@@ -87,14 +98,45 @@ make status TARGET_USER=app
 
 ## 登录与权限
 
-默认启用登录。内置账号在 [config.py](./config.py) 的 `AUTH_USERS` 中配置，角色权限在 `ROLE_PERMISSIONS` 中配置。
+默认启用登录。角色权限仍在 [config.py](./config.py) 的 `ROLE_PERMISSIONS` 中配置；账号建议放在部署目录的外部 JSON 文件中，并在 `.env` 里通过 `BACKEND_AUTH_USERS_FILE` 指向该文件。
 
-默认账号：
+源码内只保留用于本地兜底的哈希默认账号，不再保存明文密码。正式部署应创建外部账号文件并设置现场密码：
 
-| 用户名 | 密码 | 角色 | 界面与数据权限 |
+| 用户名 | 密码来源 | 角色 | 界面与数据权限 |
 | --- | --- | --- | --- |
-| `admin` | `admin123` | `full` | 查看完整界面、全部图表、本地云雷达 PPI/RPI、完整 API/WebSocket 数据。 |
-| `lite` | `lite123` | `lite` | 使用接近 `backend_lite` 的大地图态势界面；隐藏时序图、右侧图表、本地云雷达总开关、PPI、RPI、云雷达透明度、地图状态控件和色标；后端同步过滤 SCDP/ICFP/MWR 和本地云雷达接口。 |
+| `admin` | `auth_users.json` 的 `password_hash` | `full` | 查看完整界面、全部图表、本地云雷达 PPI/RPI、完整 API/WebSocket 数据。 |
+| `lite` | `auth_users.json` 的 `password_hash` | `lite` | 使用接近 `backend_lite` 的大地图态势界面；隐藏时序图、右侧图表、本地云雷达总开关、PPI、RPI、云雷达透明度、地图状态控件和色标；后端同步过滤 SCDP/ICFP/MWR 和本地云雷达接口。 |
+
+生成密码哈希：
+
+```bash
+python scripts/hash_password.py
+```
+
+远端建议创建 `/opt/yujie/python_project/auth_users.json`：
+
+```json
+[
+  {
+    "username": "admin",
+    "password_hash": "pbkdf2_sha256$...",
+    "display_name": "full",
+    "role": "full"
+  },
+  {
+    "username": "lite",
+    "password_hash": "pbkdf2_sha256$...",
+    "display_name": "lite",
+    "role": "lite"
+  }
+]
+```
+
+并在 `.env` 中配置：
+
+```env
+BACKEND_AUTH_USERS_FILE=/opt/yujie/python_project/auth_users.json
+```
 
 权限控制同时发生在前端和后端：
 
@@ -113,7 +155,8 @@ backend_v1.1/
   Makefile                # Linux 部署、服务启停和状态查看快捷入口
   launcher.py             # 单机启动器：运行时目录、日志、外部 config、浏览器
   app.py                  # FastAPI 入口、后台轮询、HTTP API、WebSocket、静态资源
-  config.py               # 业务文件路径、轮询/对齐参数、地图/雷达/影像配置
+  config.py               # 业务文件路径、轮询/对齐参数、地图/雷达/影像和权限配置
+  auth_users.example.json # 外部账号文件示例，真实 auth_users.json 不进 git
   models.py               # Track/SCDP/ICFP/MWR/AlignedFrame 数据模型
   readers.py              # 四类业务文件的增量读取、header 解析、记录构造
   aligner.py              # 以 Track 时间为主轴的数据对齐
@@ -139,7 +182,7 @@ backend_v1.1/
 python launcher.py
 
 # 仅启动 FastAPI
-python -m uvicorn app:app --host 127.0.0.1 --port 8000
+python -m uvicorn app:app --host 127.0.0.1 --port 8010
 
 # 运行冒烟测试
 python smoke_test.py
@@ -179,7 +222,7 @@ python get_radar/radar_latlon_grid_demo.py
 - `LOCAL_RADAR_REFRESH_SECONDS`：本地云雷达刷新/缓存间隔，当前默认 20 秒。
 - `LOCAL_RADAR_LAT`、`LOCAL_RADAR_LON`、`LOCAL_RADAR_SITE_NAME`：本地云雷达站点位置和名称。
 - `IMPORTANT_POINTS_FILE`：重点点位、重点路径、探测半径和方位线配置。
-- `AUTH_ENABLED`、`AUTH_USERS`、`ROLE_PERMISSIONS`：登录开关、内置账号和角色权限配置。
+- `AUTH_ENABLED`、`BACKEND_AUTH_USERS_FILE`、`ROLE_PERMISSIONS`：登录开关、外部账号文件和角色权限配置。
 - 页面“数据日期/架次/机型”只做当前运行时临时切换，不写回 `config.py`；重启后仍使用上面的默认 `DATE1`、`DATE2`、`NUM`、`AIRCRAFT_MODEL`。
 
 本地云雷达读取路径示例：

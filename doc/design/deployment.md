@@ -61,13 +61,13 @@ python launcher.py
 
 ```bash
 conda activate byw_py314
-python -m uvicorn app:app --host 127.0.0.1 --port 8000
+python -m uvicorn app:app --host 127.0.0.1 --port 8010
 ```
 
 默认地址：
 
-- 页面：`http://127.0.0.1:8000`
-- OpenAPI：`http://127.0.0.1:8000/docs`
+- 页面：`http://127.0.0.1:8010`
+- OpenAPI：`http://127.0.0.1:8010/docs`
 
 ## 启动器行为
 
@@ -93,7 +93,7 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 
 ```python
 HOST = "127.0.0.1"
-PORT = 8000
+PORT = 8010
 AUTO_OPEN_BROWSER = True
 
 ALLOW_SIMULATED_FALLBACK = False
@@ -112,6 +112,43 @@ SCDP_FILE = Path(...)
 ICFP_FILE = Path(...)
 MWR_FILE = Path(...)
 ```
+
+### 账号与密码
+
+远端 app 机器不建议把账号明文写入 `config.py`。推荐在正式部署目录创建外部账号文件：
+
+```bash
+cd /opt/yujie/python_project
+cp auth_users.example.json auth_users.json
+python scripts/hash_password.py
+```
+
+将生成的哈希写入 `auth_users.json` 的 `password_hash` 字段：
+
+```json
+[
+  {
+    "username": "admin",
+    "password_hash": "pbkdf2_sha256$...",
+    "display_name": "full",
+    "role": "full"
+  },
+  {
+    "username": "lite",
+    "password_hash": "pbkdf2_sha256$...",
+    "display_name": "lite",
+    "role": "lite"
+  }
+]
+```
+
+然后在 `.env` 中确认：
+
+```env
+BACKEND_AUTH_USERS_FILE=/opt/yujie/python_project/auth_users.json
+```
+
+`auth_users.json` 已加入 `.gitignore`，部署脚本更新时也会保留 `.env`，避免现场账号配置被源码包覆盖。
 
 ## 模拟数据
 
@@ -223,6 +260,25 @@ make linger TARGET_USER=app
 ```
 
 部署包内保留 `environment.yml`，但它只用于本地 Conda 模拟环境；远端 app 机器不要用 Conda 还原运行环境。
+
+### 已有目录更新
+
+如果远端已经部署在 `/opt/yujie/python_project`，不要直接在运行目录里半解压半更新。推荐先解压到临时目录，再由 `deploy.sh` 用 `rsync --delete` 同步到正式目录。部署脚本会排除 `.env`、`.venv`、`logs`，因此会保留现场配置、虚拟环境目录和日志目录。
+
+```bash
+rm -rf /tmp/backend-v1-update
+mkdir -p /tmp/backend-v1-update
+tar -xzf /tmp/backend-v1-20260617.tar.gz -C /tmp/backend-v1-update --strip-components=1
+cd /tmp/backend-v1-update
+sudo bash ./scripts/deploy.sh yujie /opt/yujie/python_project
+```
+
+远端端口由正式目录中的 `.env` 控制。如果远端本来已经是 `UVICORN_PORT=8010`，更新时不需要再修改端口；部署脚本会保留既有 `.env`。
+
+```bash
+sudo -u yujie env XDG_RUNTIME_DIR=/run/user/$(id -u yujie) systemctl --user restart backend-v1
+sudo -u yujie env XDG_RUNTIME_DIR=/run/user/$(id -u yujie) systemctl --user status backend-v1
+```
 
 ## PyInstaller 打包
 

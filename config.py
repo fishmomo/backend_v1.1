@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -19,6 +20,8 @@ _env_num = os.getenv('BACKEND_NUM')
 _env_aircraft_model = os.getenv('BACKEND_AIRCRAFT_MODEL')
 _env_fallback = os.getenv('BACKEND_ALLOW_SIMULATED_FALLBACK')
 _env_secret = os.getenv('BACKEND_AUTH_SECRET_KEY')
+_env_auth_users_json = os.getenv('BACKEND_AUTH_USERS_JSON')
+_env_auth_users_file = os.getenv('BACKEND_AUTH_USERS_FILE')
 _env_radar_base = os.getenv('BACKEND_LOCAL_RADAR_BASE_DIR')
 
 # Source files used by the realtime simulator.
@@ -85,7 +88,7 @@ TRACK_SIM_SKIP_SECONDS = SIM_SKIP_SECONDS
 
 # Network
 HOST = _env_host or '127.0.0.1'
-PORT = int(_env_port) if _env_port else 8000
+PORT = int(_env_port) if _env_port else 8010
 AUTO_OPEN_BROWSER = True
 
 # Auth
@@ -109,20 +112,25 @@ ROLE_PERMISSIONS = {
         'use_map_tools',
     ],
 }
-AUTH_USERS = [
-    {
-        'username': 'admin',
-        'password': 'admin123',
-        'display_name': '全量账号',
-        'role': 'full',
-    },
-    {
-        'username': 'lite',
-        'password': 'lite123',
-        'display_name': '精简账号',
-        'role': 'lite',
-    },
-]
+
+def _load_auth_users():
+    if _env_auth_users_json:
+        try:
+            users = json.loads(_env_auth_users_json)
+            return users if isinstance(users, list) else []
+        except json.JSONDecodeError:
+            return []
+    if _env_auth_users_file:
+        path = Path(_env_auth_users_file).expanduser()
+        try:
+            users = json.loads(path.read_text(encoding='utf-8-sig'))
+            return users if isinstance(users, list) else []
+        except Exception:
+            return []
+    return None
+
+
+AUTH_USERS = _load_auth_users()
 
 # Map tiles
 MAP_TILES_DIR = Path('map_tiles')

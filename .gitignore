@@ -300,6 +300,7 @@ dist/*.tar.gz
 
 # Runtime
 logs/
+auth_users.json
 
 # ignore .pyc
 __pycache__/
