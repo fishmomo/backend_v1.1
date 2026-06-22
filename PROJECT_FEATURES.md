@@ -122,3 +122,7 @@
 | 实时数据接入 | Reader 硬编码业务路径 | `readers.py` 中不应写死 `G:/B11` 和四类业务文件命名模板；路径规则已迁移至 `config.py::build_data_source_paths()`，Reader 仅消费配置生成结果。 | 已修复 |
 | 地图展示 | 重要路径/固定路径层级 | 重要路径、固定路径和雷达探测范围位于 `importantPathPane`/固定路径相关 pane，层级调整为本地云雷达下方、RainViewer 雷达上方，并绑定独立 renderer。 | 已修复 |
 | 地图展示 | 地图图层目标层级 | 地图业务图层目标顺序从上到下为：锚点、测距、航迹/飞机、区域边界、本地云雷达、重要路径/固定路径、RainViewer 雷达、RainViewer 覆盖范围、Himawari。 | 已实现 |
+| 前端可视化 | 历史/实时模式切换卡顿 | 点击历史模式后再点击实时模式，页面可能无响应；历史回放模式中飞机点位可能跳到起始点；已改为回放飞机点优先跟随选中详细帧，切回实时模式时重新恢复最新历史窗口与全轨迹 overview。 | 已修复 |
+| 前端可视化 | 历史回放观测数据不同步 | 点击更早的历史回放点时，航迹 overview 可选中但详细观测数据仍受 60min 缓存限制，图表不跟随对应时刻；已取消历史回放详细帧 60min 截断，实时显示窗口仍单独限制。 | 已修复 |
+| 前端可视化 | WebSocket keepalive 超时 | 历史回放详细数据全量加载可能阻塞前端主线程，导致 WebSocket ping/pong 超时并出现 `ConnectionClosedError ... keepalive ping timeout`；已改为首屏仅加载实时窗口，完整回放走轻量 overview，点击历史点再按需拉局部观测窗口，并放宽 uvicorn WebSocket ping timeout。 | 已修复 |
+| 前端可视化 | 右侧图表布局调整 | 右侧传感器图表中 SCDP 粒径谱与 ICFP 粒径谱位置对调；MWR 综合态势中的单值量图保留，但图内标题文字“MWR 单值量”不再显示。 | 已实现 |

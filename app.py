@@ -68,6 +68,7 @@ from config import (
     MWR_HOLD_SEC,
     POLL_INTERVAL_SEC,
     PORT,
+    TRACK_OVERVIEW_HISTORY_SECONDS,
 )
 from local_radar import build_local_radar_payload
 from publisher import ConnectionManager
@@ -88,7 +89,10 @@ async def lifespan(_: FastAPI):
             pass
 
 app = FastAPI(title='Aircraft Realtime Visualization Backend v1', lifespan=lifespan)
-store = InMemoryStore(max_history_seconds=MAX_HISTORY_SECONDS)
+store = InMemoryStore(
+    max_history_seconds=MAX_HISTORY_SECONDS,
+    max_track_history_seconds=TRACK_OVERVIEW_HISTORY_SECONDS,
+)
 manager = ConnectionManager()
 
 
@@ -661,6 +665,7 @@ def status(request: Request):
         'mwr_count': len(store.mwr_store),
         'aligned_count': len(store.aligned_store),
         'max_history_seconds': store.max_history_seconds,
+        'max_track_history_seconds': store.max_track_history_seconds,
         'poll_interval_sec': POLL_INTERVAL_SEC,
         'latest_time': None if latest is None else latest.time.isoformat(),
         'latest_mwr_time': None if latest_mwr_time is None else latest_mwr_time.isoformat(),
@@ -683,10 +688,79 @@ def latest(request: Request):
 def history(request: Request, seconds: int = 300):
     user = _require_user(request)
     if seconds <= 0:
-        return []
-    capped = min(seconds, store.max_history_seconds)
-    items = list(store.aligned_store.values())[-capped:]
+        items = list(store.aligned_store.values())
+    elif store.max_history_seconds > 0:
+        capped = min(seconds, store.max_history_seconds)
+        items = list(store.aligned_store.values())[-capped:]
+    else:
+        items = list(store.aligned_store.values())[-seconds:]
     return [_frame_for_user(item.to_dict(), user) for item in items]
+
+
+@app.get('/api/history-range')
+def history_range(request: Request, center_time: str, seconds: int = 600):
+    user = _require_user(request)
+    try:
+        center = datetime.fromisoformat(str(center_time).replace('Z', '+00:00'))
+        if center.tzinfo is not None:
+            center = center.replace(tzinfo=None)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail='invalid center_time')
+
+    seconds = max(1, int(seconds or 600))
+    if store.max_history_seconds > 0:
+        seconds = min(seconds, store.max_history_seconds)
+    half_window = timedelta(seconds=seconds / 2)
+    start = center - half_window
+    end = center + half_window
+    items = [
+        item for item in store.aligned_store.values()
+        if start <= item.time <= end
+    ]
+    return [_frame_for_user(item.to_dict(), user) for item in items]
+
+
+@app.get('/api/track/overview')
+def track_overview(request: Request, max_points: int = 2000):
+    _require_user(request)
+    max_points = max(2, min(int(max_points or 2000), 5000))
+    records = list(store.track_store.values())
+    entries = []
+    for record in records:
+        lat = record.lat
+        lon = record.lon
+        if lat is None or lon is None:
+            continue
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except (TypeError, ValueError):
+            continue
+        if not lat and not lon:
+            continue
+        entries.append({
+            'time': record.time.isoformat(),
+            'lat': lat,
+            'lon': lon,
+            'alt_m': record.alt_m,
+            'speed': record.speed,
+            'heading': record.heading,
+        })
+
+    if len(entries) <= max_points:
+        return {
+            'total': len(entries),
+            'rendered': len(entries),
+            'points': entries,
+        }
+
+    step = (len(entries) - 1) / (max_points - 1)
+    sampled = [entries[round(index * step)] for index in range(max_points)]
+    return {
+        'total': len(entries),
+        'rendered': len(sampled),
+        'points': sampled,
+    }
 
 
 @app.get('/api/map-config')
@@ -872,4 +946,11 @@ async def realtime(websocket: WebSocket):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run('app:app', host=HOST, port=PORT, reload=False)
+    uvicorn.run(
+        'app:app',
+        host=HOST,
+        port=PORT,
+        reload=False,
+        ws_ping_interval=30,
+        ws_ping_timeout=60,
+    )

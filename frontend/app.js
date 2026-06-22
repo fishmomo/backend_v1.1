@@ -1,4 +1,4 @@
-const MAX_WINDOW_MINUTES = 60;
+const MAX_LIVE_WINDOW_MINUTES = 60;
 const DIRTY_TRACK_THRESHOLD_DEG = 1;
 const REPLAY_INTERVAL_MS = 700;
 const REPLAY_CLICK_PIXEL_THRESHOLD = 18;
@@ -7,6 +7,7 @@ const ICFP_BIN_DISPLAY_COUNT = 30;
 const MAX_BIN_DISPLAY_COUNT = 30;
 const MAX_TRACK_RENDER_POINTS = 1800;
 const MAX_REPLAY_MARKERS = 260;
+const HISTORY_DETAIL_WINDOW_SECONDS = 10 * 60;
 const MAP_INTERACTION_IDLE_RESUME_MS = 2000;
 const MAP_MINI_VIEWPORT_MARGIN = 16;
 const RAINVIEWER_API_REFRESH_MS = 10 * 60 * 1000;
@@ -17,7 +18,7 @@ const REPLAY_MAP_RENDER_INTERVAL_MS = 1000;
 const REPLAY_CHART_RENDER_INTERVAL_MS = 1200;
 const REPLAY_HEATMAP_RENDER_INTERVAL_MS = 2000;
 const MAP_MINI_VISIBLE_RATIO = 0.35;
-const FRONTEND_BUILD = '2026-06-17-live-track-click';
+const FRONTEND_BUILD = '2026-06-22-chart-layout-fix';
 const AREA_BOUNDARY_WARNING_DEG = 0.02;
 const EARTH_RADIUS_KM = 6371.0088;
 const MAX_AZIMUTH_SECTOR_COUNT = 72;
@@ -104,13 +105,14 @@ const DEFAULT_PATH_STYLE = {
 };
 const VALID_MARKER_SHAPES = new Set(['circle', 'square', 'diamond', 'triangle']);
 window.__BY_WEATHER_FRONTEND_BUILD__ = FRONTEND_BUILD;
-window.__BY_WEATHER_LAYER_FIX__ = 'live-track-click-v1';
+window.__BY_WEATHER_LAYER_FIX__ = 'chart-layout-fix-v1';
 console.info('[frontend build]', FRONTEND_BUILD);
 const state = {
     currentUser: null,
     frames: [],
     pendingFrames: [],
-    maxHistorySeconds: 3600,
+    trackOverview: { total: 0, rendered: 0, points: [] },
+    maxHistorySeconds: 0,
     windowMinutes: 10,
     dataSource: null,
     replayPointIntervalSec: 10,
@@ -2594,6 +2596,9 @@ function upsertFrame(collection, frame) {
 }
 
 function trimFrames() {
+    if (state.maxHistorySeconds <= 0) {
+        return;
+    }
     const maxFrames = Math.max(1, state.maxHistorySeconds);
     if (state.frames.length > maxFrames) {
         state.frames = state.frames.slice(-maxFrames);
@@ -2654,6 +2659,53 @@ function getFilteredTrackEntries(frames) {
     });
 
     return filtered;
+}
+
+function buildTrackEntryFromFrame(frame) {
+    if (!frame || !frame.track || !frame.track.data) {
+        return null;
+    }
+    const data = frame.track.data;
+    const lat = Number(data.lat);
+    const lon = Number(data.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) {
+        return null;
+    }
+    return {
+        frame,
+        data: { ...data, lat, lon },
+        isDetailed: true,
+    };
+}
+
+function getTrackOverviewEntries() {
+    return (state.trackOverview.points || [])
+        .map((point) => ({
+            frame: { time: point.time },
+            data: {
+                lat: point.lat,
+                lon: point.lon,
+                alt_m: point.alt_m,
+                speed: point.speed,
+                heading: point.heading,
+            },
+            isOverview: true,
+        }))
+        .filter((item) => item.data.lat != null && item.data.lon != null)
+        .filter((item) => {
+            const lat = Number(item.data.lat);
+            const lon = Number(item.data.lon);
+            return Number.isFinite(lat)
+                && Number.isFinite(lon)
+                && !(lat === 0 && lon === 0);
+        });
+}
+
+function getTrackMapEntries(displayFrames) {
+    if (state.mode === 'replay' && state.trackOverview.points && state.trackOverview.points.length) {
+        return getTrackOverviewEntries();
+    }
+    return getFilteredTrackEntries(displayFrames);
 }
 
 function getReplayTrackEntries(entries) {
@@ -2726,6 +2778,7 @@ function buildTrackRenderSignature(entries, points) {
         state.mode,
         state.windowMinutes,
         state.replayPointIntervalSec,
+        state.trackOverview.total || 0,
     ].join('|');
 }
 
@@ -2864,6 +2917,16 @@ function setMode(mode) {
     renderAll();
 }
 
+async function switchToLiveMode() {
+    setMode('live');
+    try {
+        await loadHistory();
+        setMode('live');
+    } catch (error) {
+        console.warn('[live-mode] failed to reload latest history:', error);
+    }
+}
+
 function stopReplay() {
     if (state.replayTimer) {
         clearInterval(state.replayTimer);
@@ -2907,12 +2970,63 @@ function selectFrameByTime(time, mode = state.mode) {
     requestRender();
 }
 
-function selectHistoricalTrackPoint(time) {
+function nearestFrameToTime(frames, time) {
+    const target = parseTime(time);
+    if (!target || !frames.length) {
+        return null;
+    }
+    let nearest = null;
+    let nearestDistance = Infinity;
+    frames.forEach((frame) => {
+        const current = parseTime(frame.time);
+        if (!current) {
+            return;
+        }
+        const distance = Math.abs(current - target);
+        if (distance < nearestDistance) {
+            nearest = frame;
+            nearestDistance = distance;
+        }
+    });
+    return nearest;
+}
+
+async function loadHistoryRange(centerTime) {
+    const response = await fetch(
+        `/api/history-range?center_time=${encodeURIComponent(centerTime)}&seconds=${HISTORY_DETAIL_WINDOW_SECONDS}`,
+        { cache: 'no-store' },
+    );
+    if (!response.ok) {
+        throw new Error(`history-range status ${response.status}`);
+    }
+    const frames = await response.json();
+    if (!Array.isArray(frames) || !frames.length) {
+        return null;
+    }
+    state.frames = frames;
+    const nearest = nearestFrameToTime(frames, centerTime) || frames[frames.length - 1];
+    state.selectedFrameTime = nearest ? nearest.time : centerTime;
+    forceReplayRenderNow();
+    updateReplayControls();
+    requestRender();
+    return nearest;
+}
+
+async function selectHistoricalTrackPoint(time) {
     if (!time) {
         return;
     }
     if (state.mode === 'replay') {
         stopReplay();
+        const exists = state.frames.some((frame) => frame.time === time);
+        if (!exists) {
+            try {
+                await loadHistoryRange(time);
+                return;
+            } catch (error) {
+                console.warn('[history-range] fallback to existing frames:', error);
+            }
+        }
     }
     selectFrameByTime(time, state.mode);
 }
@@ -2938,11 +3052,22 @@ function updateTrackMap(displayFrames) {
     trackLine.setLatLngs(points);
 
     const selectedFrame = getSelectedFrame();
-    const selectedEntry = entries.find((item) => selectedFrame && item.frame.time === selectedFrame.time);
-    const activeEntry = selectedEntry || entries[entries.length - 1];
-    const focusPoint = selectedEntry ? [selectedEntry.data.lat, selectedEntry.data.lon] : points[points.length - 1];
-    trackMarker.setLatLng(points[points.length - 1]);
-    trackMarker.bindTooltip(formatTrackTooltip(entries[entries.length - 1]), { direction: 'top', opacity: 0.92 });
+    const selectedDetailedEntry = buildTrackEntryFromFrame(selectedFrame);
+    const selectedEntry = entries.find((item) => selectedFrame && item.frame.time === selectedFrame.time)
+        || selectedDetailedEntry;
+    const latestEntry = entries[entries.length - 1];
+    const activeEntry = state.mode === 'replay'
+        ? (selectedDetailedEntry || selectedEntry || latestEntry)
+        : (selectedEntry || latestEntry);
+    const planeEntry = state.mode === 'replay' ? activeEntry : latestEntry;
+    const focusPoint = activeEntry
+        ? [activeEntry.data.lat, activeEntry.data.lon]
+        : points[points.length - 1];
+    const planePoint = planeEntry
+        ? [planeEntry.data.lat, planeEntry.data.lon]
+        : points[points.length - 1];
+    trackMarker.setLatLng(planePoint);
+    trackMarker.bindTooltip(formatTrackTooltip(planeEntry || latestEntry), { direction: 'top', opacity: 0.92 });
     selectedTrackMarker.setLatLng(focusPoint);
     selectedTrackMarker.setStyle({ opacity: 1, fillOpacity: 0.85 });
     selectedTrackMarker.bindTooltip(formatTrackTooltip(activeEntry), { direction: 'top', opacity: 0.92 });
@@ -2974,14 +3099,17 @@ function updateTrackMapFast(displayFrames) {
     if (state.mapRefreshPaused) {
         return;
     }
-    const entries = getFilteredTrackEntries(displayFrames);
+    const entries = getTrackMapEntries(displayFrames);
     const points = entries.map((item) => [item.data.lat, item.data.lon]);
     fitInitialMapView(points);
     const renderedPoints = downsampleTrackPoints(points);
     const replayEntries = getReplayTrackEntries(entries);
     const replayVisualEntries = downsampleReplayEntries(replayEntries);
     state.replayEntries = replayEntries;
-    elements.trackSummary.textContent = `轨迹点 ${points.length} / 渲染 ${renderedPoints.length}`;
+    const overviewSuffix = state.mode === 'replay' && state.trackOverview.total
+        ? ` / 全轨迹 ${state.trackOverview.total}`
+        : '';
+    elements.trackSummary.textContent = `轨迹点 ${points.length} / 渲染 ${renderedPoints.length}${overviewSuffix}`;
     selectedTrackMarker.setStyle({ opacity: 0, fillOpacity: 0 });
 
     if (!points.length) {
@@ -3002,11 +3130,22 @@ function updateTrackMapFast(displayFrames) {
     }
 
     const selectedFrame = getSelectedFrame();
-    const selectedEntry = entries.find((item) => selectedFrame && item.frame.time === selectedFrame.time);
-    const activeEntry = selectedEntry || entries[entries.length - 1];
-    const focusPoint = selectedEntry ? [selectedEntry.data.lat, selectedEntry.data.lon] : points[points.length - 1];
-    trackMarker.setLatLng(points[points.length - 1]);
-    trackMarker.bindTooltip(formatTrackTooltip(entries[entries.length - 1]), { direction: 'top', opacity: 0.92 });
+    const selectedDetailedEntry = buildTrackEntryFromFrame(selectedFrame);
+    const selectedEntry = entries.find((item) => selectedFrame && item.frame.time === selectedFrame.time)
+        || selectedDetailedEntry;
+    const latestEntry = entries[entries.length - 1];
+    const activeEntry = state.mode === 'replay'
+        ? (selectedDetailedEntry || selectedEntry || latestEntry)
+        : (selectedEntry || latestEntry);
+    const planeEntry = state.mode === 'replay' ? activeEntry : latestEntry;
+    const focusPoint = activeEntry
+        ? [activeEntry.data.lat, activeEntry.data.lon]
+        : points[points.length - 1];
+    const planePoint = planeEntry
+        ? [planeEntry.data.lat, planeEntry.data.lon]
+        : points[points.length - 1];
+    trackMarker.setLatLng(planePoint);
+    trackMarker.bindTooltip(formatTrackTooltip(planeEntry || latestEntry), { direction: 'top', opacity: 0.92 });
     selectedTrackMarker.setLatLng(focusPoint);
     selectedTrackMarker.setStyle({ opacity: 1, fillOpacity: 0.85 });
     selectedTrackMarker.bindTooltip(formatTrackTooltip(activeEntry), { direction: 'top', opacity: 0.92 });
@@ -3160,7 +3299,7 @@ function updateIcfpCharts(selectedFrame, displayFrames) {
 
 function updateMwrScalarChart(selectedFrame, displayFrames) {
     const frames = buildSeriesFrames('mwr', displayFrames);
-    renderLineChart(charts.mwrScalar, 'MWR 单值量', frames, [
+    renderLineChart(charts.mwrScalar, '', frames, [
         { name: MWR_SCALAR_LABELS.sur_tem, getValue: (frame) => frame.mwr.data.sur_tem },
         { name: MWR_SCALAR_LABELS.sur_hum, getValue: (frame) => frame.mwr.data.sur_hum },
         { name: MWR_SCALAR_LABELS.cloud_base_m, getValue: (frame) => frame.mwr.data.cloud_base_km == null ? null : frame.mwr.data.cloud_base_km * 1000 },
@@ -3257,8 +3396,10 @@ function updateMeta(selectedFrame) {
 
 function updateWindowLimitIndicator() {
     const requestedMinutes = Number(elements.windowMinutes.value) || 0;
-    const effectiveLimit = Math.min(MAX_WINDOW_MINUTES, Math.max(1, Math.floor(state.maxHistorySeconds / 60)));
-    elements.historyLimit.textContent = `限制时间 ${effectiveLimit}min`;
+    const effectiveLimit = MAX_LIVE_WINDOW_MINUTES;
+    elements.historyLimit.textContent = state.maxHistorySeconds <= 0
+        ? '历史回放 全部'
+        : `历史回放 ${Math.max(1, Math.floor(state.maxHistorySeconds / 60))}min`;
     setPillState(elements.historyLimit, requestedMinutes > effectiveLimit ? 'pill-alert' : 'pill-neutral');
 }
 
@@ -3290,6 +3431,7 @@ function clearLoadedRuntimeData() {
     stopReplay();
     state.frames = [];
     state.pendingFrames = [];
+    state.trackOverview = { total: 0, rendered: 0, points: [] };
     state.selectedFrameTime = null;
     state.replayEntries = [];
     state.replayLayerSignature = '';
@@ -3418,11 +3560,11 @@ function renderAll() {
 async function loadStatus() {
     const response = await fetch('/api/status');
     const data = await response.json();
-    state.maxHistorySeconds = data.max_history_seconds || 3600;
+    state.maxHistorySeconds = data.max_history_seconds ?? 0;
     if (data.data_source) {
         applyDataSourceToInputs(data.data_source);
     }
-    elements.windowMinutes.max = String(Math.min(MAX_WINDOW_MINUTES, Math.max(1, Math.floor(state.maxHistorySeconds / 60))));
+    elements.windowMinutes.max = String(MAX_LIVE_WINDOW_MINUTES);
     updateWindowLimitIndicator();
 }
 
@@ -3478,12 +3620,32 @@ async function loadImportantPoints() {
 }
 
 async function loadHistory() {
-    const seconds = Math.max(1, state.maxHistorySeconds);
-    const response = await fetch(`/api/history?seconds=${seconds}`);
+    const seconds = Math.max(1, Math.floor(MAX_LIVE_WINDOW_MINUTES * 60));
+    const historyUrl = `/api/history?seconds=${seconds}`;
+    const response = await fetch(historyUrl);
     state.frames = await response.json();
+    await loadTrackOverview();
     const latest = latestFrame();
     state.selectedFrameTime = latest ? latest.time : null;
     renderAll();
+}
+
+async function loadTrackOverview() {
+    try {
+        const response = await fetch(`/api/track/overview?max_points=${MAX_TRACK_RENDER_POINTS}`, { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`track overview status ${response.status}`);
+        }
+        const data = await response.json();
+        state.trackOverview = {
+            total: data.total || 0,
+            rendered: data.rendered || 0,
+            points: Array.isArray(data.points) ? data.points : [],
+        };
+    } catch (error) {
+        console.warn('[track-overview] fallback to detailed frames:', error);
+        state.trackOverview = { total: 0, rendered: 0, points: [] };
+    }
 }
 
 function openWebSocket() {
@@ -3531,7 +3693,7 @@ function bindEvents() {
     }
     elements.applyWindow.addEventListener('click', async () => {
         const requested = Number(elements.windowMinutes.value) || 10;
-        const allowed = Math.min(MAX_WINDOW_MINUTES, Math.max(1, Math.floor(state.maxHistorySeconds / 60)));
+        const allowed = MAX_LIVE_WINDOW_MINUTES;
         state.windowMinutes = Math.max(1, Math.min(requested, allowed));
         await loadHistory();
         setMode('live');
@@ -3720,7 +3882,7 @@ function bindEvents() {
     });
 
     elements.liveModeBtn.addEventListener('click', () => {
-        setMode('live');
+        switchToLiveMode();
     });
 
     elements.replayModeBtn.addEventListener('click', () => {

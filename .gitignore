@@ -301,6 +301,7 @@ dist/*.tar.gz
 # Runtime
 logs/
 auth_users.json
+commit_text.md
 
 # ignore .pyc
 __pycache__/

@@ -66,3 +66,16 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 python smoke_test.py
 python simulate_realtime.py
 ```
+
+## Commit Note Preference
+
+When creating or updating `commit_text.md`, write it as a bilingual timestamp log by default:
+
+- Use timestamp blocks in this exact shape:
+  `yyyy/mm/dd hh:mm:ss`
+  `  1. English summary / 中文摘要`
+  `  2. English summary / 中文摘要`
+- Add a new timestamp block for each new work batch so the user can distinguish current changes from previous changes.
+- Keep each numbered item focused on substantive changes, not every edited file.
+- Include verification notes under the relevant timestamp block when checks are run.
+- `commit_text.md` is a local ignored helper file and should not be committed.

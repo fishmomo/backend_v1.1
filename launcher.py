@@ -92,7 +92,14 @@ def main():
     if auto_open:
         open_browser_later(url)
 
-    uvicorn.run(app_module.app, host=host, port=port, reload=False)
+    uvicorn.run(
+        app_module.app,
+        host=host,
+        port=port,
+        reload=False,
+        ws_ping_interval=30,
+        ws_ping_timeout=60,
+    )
 
 
 if __name__ == '__main__':

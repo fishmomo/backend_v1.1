@@ -34,9 +34,9 @@ SOURCE_MWR_FILE = Path('G:/WR_YMWR/B11/20260303/Z_UPAR_I_59134_20260303000000_P_
 SIM_OUTPUT_DIR = Path('simulated_data')
 
 # Business data paths
-DATE1 = _env_date1 or "2026-05-30"
+DATE1 = _env_date1 or "2026-04-23"
 DATE2 = DATE1.replace('-', '')
-NUM = int(_env_num) if _env_num else 1
+NUM = int(_env_num) if _env_num else 2
 AIRCRAFT_MODEL = (_env_aircraft_model or 'B11').strip().upper()
 
 if _env_data_base:
@@ -75,7 +75,10 @@ POLL_INTERVAL_SEC = 0.5
 ALIGN_DELAY_SEC = 2.0
 MWR_HOLD_SEC = 15
 ICFP_LOOKBACK_SEC = 300
-MAX_HISTORY_SECONDS = 3600
+# 0 means unlimited in-memory replay history. Realtime display still uses
+# the frontend live window setting to avoid drawing everything while online.
+MAX_HISTORY_SECONDS = 0
+TRACK_OVERVIEW_HISTORY_SECONDS = 0
 
 # Simulation behavior
 TRACK_SIM_INTERVAL_SEC = 1.0

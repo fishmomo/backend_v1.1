@@ -4,8 +4,11 @@ from typing import Any, Dict
 
 
 class InMemoryStore:
-    def __init__(self, max_history_seconds: int = 3600):
+    def __init__(self, max_history_seconds: int = 3600, max_track_history_seconds: int = None):
         self.max_history_seconds = max_history_seconds
+        self.max_track_history_seconds = (
+            max_history_seconds if max_track_history_seconds is None else max_track_history_seconds
+        )
         self.reset()
 
     def reset(self):
@@ -51,16 +54,22 @@ class InMemoryStore:
         }
 
     def _trim(self, data: OrderedDict):
+        if self.max_history_seconds <= 0:
+            return
         while len(data) > self.max_history_seconds:
             data.popitem(last=False)
 
     def _trim_mwr(self, data: OrderedDict):
+        if self.max_history_seconds <= 0:
+            return
         while len(data) > self.max_history_seconds:
             oldest_key, _ = data.popitem(last=False)
             self.mwr_arrival_at.pop(oldest_key, None)
 
     def _trim_track(self, data: OrderedDict):
-        while len(data) > self.max_history_seconds:
+        if self.max_track_history_seconds <= 0:
+            return
+        while len(data) > self.max_track_history_seconds:
             oldest_key, _ = data.popitem(last=False)
             self.track_arrival_at.pop(oldest_key, None)
 

@@ -99,7 +99,7 @@ manager = ConnectionManager()
 
 ### GET `/api/history?seconds=300`
 
-返回最近窗口内的对齐帧数组。请求值会被 `MAX_HISTORY_SECONDS` 截断。
+返回最近窗口内的对齐帧数组。`seconds=0` 才返回全部已缓存对齐帧；当 `seconds > 0` 时，即使 `MAX_HISTORY_SECONDS = 0`，也只返回最近 N 条。仅当 `MAX_HISTORY_SECONDS > 0` 时，请求值才会被截断。
 
 注意：当前实现按最近 N 条对齐帧切片，不是严格按时间戳过滤。
 

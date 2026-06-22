@@ -10,7 +10,7 @@
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin=""
     >
-    <link rel="stylesheet" href="/static/styles.css?v=20260617-live-track-click">
+    <link rel="stylesheet" href="/static/styles.css?v=20260622-chart-layout-fix">
 </head>
 <body>
     <header class="topbar">
@@ -26,7 +26,7 @@
             <span class="pill pill-neutral" id="mode-status">模式 实时监控</span>
             <span class="pill pill-neutral" id="latest-time">最新 --:--:--</span>
             <span class="pill pill-neutral" id="current-date">日期 ----/--/--</span>
-            <span class="pill pill-neutral" id="history-limit">历史窗 60min</span>
+            <span class="pill pill-neutral" id="history-limit">历史回放 全部</span>
             <span class="pill pill-neutral" id="user-role">账号 --</span>
             <button class="topbar-button" id="logout-btn" type="button">退出</button>
         </div>
@@ -252,18 +252,18 @@
                 <div id="mwr-scalar-chart" class="chart chart-grid-cell"></div>
             </section>
 
-            <section class="panel grid-icfp-bins">
-                <div class="panel-header">
-                    <h2>ICFP 粒径谱</h2>
-                </div>
-                <div id="icfp-bins-chart" class="chart chart-grid-cell"></div>
-            </section>
-
             <section class="panel grid-scdp-bins">
                 <div class="panel-header">
                     <h2>SCDP 粒径谱</h2>
                 </div>
                 <div id="scdp-bins-chart" class="chart chart-grid-cell"></div>
+            </section>
+
+            <section class="panel grid-icfp-bins">
+                <div class="panel-header">
+                    <h2>ICFP 粒径谱</h2>
+                </div>
+                <div id="icfp-bins-chart" class="chart chart-grid-cell"></div>
             </section>
 
             <section class="panel panel-wide profile-panel">
@@ -344,6 +344,6 @@
         crossorigin=""
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <script src="/static/app.js?v=20260617-live-track-click"></script>
+    <script src="/static/app.js?v=20260622-chart-layout-fix"></script>
 </body>
 </html>

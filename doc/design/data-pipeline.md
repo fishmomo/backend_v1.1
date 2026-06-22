@@ -146,7 +146,7 @@ ICFP 和 MWR 对齐结果都带有：
 
 ## 历史窗口
 
-`InMemoryStore` 使用 `OrderedDict` 保存历史。`MAX_HISTORY_SECONDS` 当前被用作最大记录数上限，而不是严格按 wall-clock 秒清理。
+`InMemoryStore` 使用 `OrderedDict` 保存历史。`MAX_HISTORY_SECONDS` 当前被用作最大记录数上限，而不是严格按 wall-clock 秒清理；当 `MAX_HISTORY_SECONDS = 0` 时不裁剪详细历史，用于支持完整历史回放。
 
 相关缓存：
 
@@ -156,7 +156,7 @@ ICFP 和 MWR 对齐结果都带有：
 - `mwr_store`
 - `aligned_store`
 
-`/api/history?seconds=300` 当前按最近 N 条对齐帧返回，并用 `MAX_HISTORY_SECONDS` 截断请求值。
+`/api/history?seconds=300` 当前按最近 N 条对齐帧返回；`seconds=0` 才返回全部已缓存对齐帧。仅当 `MAX_HISTORY_SECONDS > 0` 时才截断请求值；当 `MAX_HISTORY_SECONDS = 0` 时，后端不裁剪缓存，但 `seconds > 0` 的请求仍只返回最近 N 条。
 
 ## 数据质量与可追溯
 
