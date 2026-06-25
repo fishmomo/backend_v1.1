@@ -1,4 +1,4 @@
-# CLAUDE.md | BY Weather Backend v1.1 Agent 指南
+# AGENTS.md | BY Weather Backend v1.1 Agent 指南
 
 ## 置顶协作规则：新需求先讨论再执行
 

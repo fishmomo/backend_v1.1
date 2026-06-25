@@ -7,7 +7,7 @@ const ICFP_BIN_DISPLAY_COUNT = 30;
 const MAX_BIN_DISPLAY_COUNT = 30;
 const MAX_TRACK_RENDER_POINTS = 1800;
 const MAX_REPLAY_MARKERS = 260;
-const HISTORY_DETAIL_WINDOW_SECONDS = 10 * 60;
+const HISTORY_DETAIL_WINDOW_SECONDS = 20 * 60;
 const MAP_INTERACTION_IDLE_RESUME_MS = 2000;
 const MAP_MINI_VIEWPORT_MARGIN = 16;
 const RAINVIEWER_API_REFRESH_MS = 10 * 60 * 1000;
@@ -18,7 +18,43 @@ const REPLAY_MAP_RENDER_INTERVAL_MS = 1000;
 const REPLAY_CHART_RENDER_INTERVAL_MS = 1200;
 const REPLAY_HEATMAP_RENDER_INTERVAL_MS = 2000;
 const MAP_MINI_VISIBLE_RATIO = 0.35;
-const FRONTEND_BUILD = '2026-06-22-chart-layout-fix';
+const MWR_ZONE_VISUAL_MAP_TOP = 4;
+const MWR_ZONE_GRID_TOP = 34;
+const MWR_ZONE_GRID_BOTTOM = 40;
+const MWR_ZONE_WINDOW_SIZE_M = 1000;
+const MWR_ZONE_MAX_HEIGHT_M = 10000;
+const TEMPORARY_AIRSPACE_SAMPLE = {
+    version: 1,
+    paths: [
+        {
+            id: 'route_corridor_001',
+            name: '临时航线走廊',
+            type: 'line',
+            color: '#38bdf8',
+            points: [
+                [110.05, 20.85],
+                [110.25, 20.95],
+                [110.42, 20.82],
+            ],
+        },
+    ],
+    areas: [
+        {
+            id: 'task_area_001',
+            name: '临时任务区',
+            type: 'polygon',
+            color: '#f43f5e',
+            points: [
+                [109.95, 20.72],
+                [110.18, 20.76],
+                [110.15, 20.58],
+                [109.92, 20.56],
+                [109.95, 20.72],
+            ],
+        },
+    ],
+};
+const FRONTEND_BUILD = '2026-06-25-temporary-airspace';
 const AREA_BOUNDARY_WARNING_DEG = 0.02;
 const EARTH_RADIUS_KM = 6371.0088;
 const MAX_AZIMUTH_SECTOR_COUNT = 72;
@@ -105,7 +141,7 @@ const DEFAULT_PATH_STYLE = {
 };
 const VALID_MARKER_SHAPES = new Set(['circle', 'square', 'diamond', 'triangle']);
 window.__BY_WEATHER_FRONTEND_BUILD__ = FRONTEND_BUILD;
-window.__BY_WEATHER_LAYER_FIX__ = 'chart-layout-fix-v1';
+window.__BY_WEATHER_LAYER_FIX__ = 'temporary-airspace-v1';
 console.info('[frontend build]', FRONTEND_BUILD);
 const state = {
     currentUser: null,
@@ -116,6 +152,9 @@ const state = {
     windowMinutes: 10,
     dataSource: null,
     replayPointIntervalSec: 10,
+    timelineCollapsed: false,
+    rightPanelCollapsed: false,
+    mwrZoneWindowStartM: 0,
     replayEntries: [],
     replayLayerSignature: '',
     trackRenderSignature: '',
@@ -197,7 +236,24 @@ const elements = {
     selectedTimeLabel: document.getElementById('selected-time-label'),
     windowMinutes: document.getElementById('window-minutes'),
     replayPointSeconds: document.getElementById('replay-point-seconds'),
-    applyWindow: document.getElementById('apply-window'),
+    applyWindowMinutes: document.getElementById('apply-window-minutes'),
+    applyReplayPointInterval: document.getElementById('apply-replay-point-interval'),
+    toggleTimelinePanel: document.getElementById('toggle-timeline-panel'),
+    toggleRightPanel: document.getElementById('toggle-right-panel'),
+    mwrZoneHeightWindow: document.getElementById('mwr-zone-height-window'),
+    mwrZoneHeightPrev: document.getElementById('mwr-zone-height-prev'),
+    mwrZoneHeightNext: document.getElementById('mwr-zone-height-next'),
+    temporaryAirspaceLoad: document.getElementById('temporary-airspace-load'),
+    temporaryAirspaceClear: document.getElementById('temporary-airspace-clear'),
+    temporaryAirspaceSample: document.getElementById('temporary-airspace-sample'),
+    temporaryAirspaceFile: document.getElementById('temporary-airspace-file'),
+    temporaryAirspaceStatus: document.getElementById('temporary-airspace-status'),
+    temporaryAirspaceModal: document.getElementById('temporary-airspace-modal'),
+    temporaryAirspaceModalClose: document.getElementById('temporary-airspace-modal-close'),
+    temporaryAirspaceModalCloseSecondary: document.getElementById('temporary-airspace-modal-close-secondary'),
+    temporaryAirspaceSampleCode: document.getElementById('temporary-airspace-sample-code'),
+    temporaryAirspaceCopySample: document.getElementById('temporary-airspace-copy-sample'),
+    temporaryAirspaceDownloadSample: document.getElementById('temporary-airspace-download-sample'),
     dataSourceDate: document.getElementById('data-source-date'),
     dataSourceNum: document.getElementById('data-source-num'),
     dataSourceAircraft: document.getElementById('data-source-aircraft'),
@@ -264,6 +320,44 @@ function setPermissionVisibility(selector, visible) {
     });
 }
 
+function animateFlexibleLayoutResize(durationMs = 460) {
+    const startedAt = performance.now();
+    function tick(now) {
+        resizeCharts();
+        updateMapMiniMode();
+        if (now - startedAt < durationMs) {
+            requestAnimationFrame(tick);
+        }
+    }
+    requestAnimationFrame(tick);
+}
+
+function refreshFlexibleLayout() {
+    const canViewCharts = hasPermission('view_charts');
+    const timelineCollapsed = canViewCharts && state.timelineCollapsed;
+    const rightCollapsed = canViewCharts && state.rightPanelCollapsed;
+
+    if (elements.centerStack) {
+        elements.centerStack.classList.toggle('timeline-panel-collapsed', timelineCollapsed);
+    }
+    if (elements.dashboard) {
+        elements.dashboard.classList.toggle('right-panel-collapsed', rightCollapsed);
+    }
+    if (elements.toggleTimelinePanel) {
+        elements.toggleTimelinePanel.hidden = !canViewCharts;
+        elements.toggleTimelinePanel.textContent = timelineCollapsed ? '∧' : '∨';
+        elements.toggleTimelinePanel.setAttribute('aria-expanded', timelineCollapsed ? 'false' : 'true');
+        elements.toggleTimelinePanel.setAttribute('aria-label', timelineCollapsed ? '展开时序图' : '折叠时序图');
+    }
+    if (elements.toggleRightPanel) {
+        elements.toggleRightPanel.hidden = !canViewCharts;
+        elements.toggleRightPanel.textContent = rightCollapsed ? '‹' : '›';
+        elements.toggleRightPanel.setAttribute('aria-expanded', rightCollapsed ? 'false' : 'true');
+        elements.toggleRightPanel.setAttribute('aria-label', rightCollapsed ? '展开右侧图表' : '折叠右侧图表');
+    }
+    animateFlexibleLayoutResize();
+}
+
 function applyUserPermissions() {
     const user = state.currentUser || {};
     const canViewCharts = hasPermission('view_charts');
@@ -278,6 +372,7 @@ function applyUserPermissions() {
     }
     setPermissionVisibility('.permission-charts', canViewCharts);
     setPermissionVisibility('.permission-local-radar', canViewLocalRadar);
+    refreshFlexibleLayout();
     if (elements.userRole) {
         elements.userRole.textContent = user.username || user.role || '--';
     }
@@ -910,6 +1005,7 @@ const trackPointLayer = L.layerGroup().addTo(map);
 const importantPointLayer = L.layerGroup().addTo(map);
 const importantPathLayer = L.layerGroup().addTo(map);
 const areaBoundaryLayer = L.layerGroup().addTo(map);
+const temporaryAirspaceLayer = L.featureGroup().addTo(map);
 const measureLayer = L.layerGroup().addTo(map);
 const measurePreviewLayer = L.layerGroup().addTo(map);
 const anchorLayer = L.layerGroup().addTo(map);
@@ -1353,8 +1449,7 @@ function renderImportantPoints() {
         const line = isClosedPath
             ? L.polygon(coords, {
                 ...lineOptions,
-                fillColor: style.color,
-                fillOpacity: 0.08,
+                fillOpacity: 0,
             })
             : L.polyline(coords, lineOptions);
         const descriptionText = path.description ? `<div class="important-point-popup-desc">${escapeHtml(path.description)}</div>` : '';
@@ -1406,6 +1501,230 @@ function renderImportantPoints() {
         warnings.length
     );
     fitInitialMapView([]);
+}
+
+function temporaryAirspaceSampleText() {
+    return JSON.stringify(TEMPORARY_AIRSPACE_SAMPLE, null, 2);
+}
+
+function normalizeTemporaryAirspacePoint(point) {
+    if (Array.isArray(point) && point.length >= 2) {
+        const lon = Number(point[0]);
+        const lat = Number(point[1]);
+        return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+    }
+    if (point && typeof point === 'object') {
+        const lat = Number(point.lat);
+        const lon = Number(point.lon);
+        return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+    }
+    return null;
+}
+
+function temporaryAirspaceStyle(feature) {
+    const props = feature && feature.properties ? feature.properties : {};
+    const color = props.color || '#38bdf8';
+    return {
+        color,
+        weight: Number(props.weight) || 4,
+        opacity: Number(props.opacity) || 0.95,
+        dashArray: props.dashArray || props.dash_array || '8 6',
+        fillColor: props.fillColor || color,
+        fillOpacity: Number.isFinite(Number(props.fillOpacity)) ? Number(props.fillOpacity) : 0.12,
+        pane: 'areaBoundaryPane',
+        renderer: areaBoundaryRenderer,
+        interactive: true,
+    };
+}
+
+function bindTemporaryAirspaceTooltip(layer, properties = {}) {
+    const label = properties.name || properties.id || properties.title;
+    if (!label) {
+        return;
+    }
+    layer.bindTooltip(`<span>${escapeHtml(label)}</span>`, {
+        direction: 'top',
+        className: 'important-point-label',
+        pane: 'fixedTooltipPane',
+    });
+}
+
+function buildTemporaryAirspaceFeatures(data) {
+    if (!data || typeof data !== 'object') {
+        throw new Error('\u6587\u4ef6\u5185\u5bb9\u4e0d\u662f JSON \u5bf9\u8c61');
+    }
+    if (data.type === 'FeatureCollection' || data.type === 'Feature' || data.type === 'LineString' ||
+        data.type === 'Polygon' || data.type === 'MultiLineString' || data.type === 'MultiPolygon') {
+        return data;
+    }
+
+    const features = [];
+    const paths = Array.isArray(data.paths) ? data.paths : [];
+    const areas = Array.isArray(data.areas) ? data.areas : [];
+
+    paths.forEach((path) => {
+        const coords = (Array.isArray(path.points) ? path.points : [])
+            .map(normalizeTemporaryAirspacePoint)
+            .filter(Boolean)
+            .map(([lat, lon]) => [lon, lat]);
+        if (coords.length < 2) {
+            return;
+        }
+        features.push({
+            type: 'Feature',
+            properties: {
+                id: path.id,
+                name: path.name,
+                color: path.color || '#38bdf8',
+                weight: path.weight,
+                dashArray: path.dash_array || path.dashArray,
+            },
+            geometry: {
+                type: 'LineString',
+                coordinates: coords,
+            },
+        });
+    });
+
+    areas.forEach((area) => {
+        const coords = (Array.isArray(area.points) ? area.points : [])
+            .map(normalizeTemporaryAirspacePoint)
+            .filter(Boolean)
+            .map(([lat, lon]) => [lon, lat]);
+        if (coords.length < 3) {
+            return;
+        }
+        const first = coords[0];
+        const last = coords[coords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+            coords.push([...first]);
+        }
+        features.push({
+            type: 'Feature',
+            properties: {
+                id: area.id,
+                name: area.name,
+                color: area.color || '#f43f5e',
+                fillOpacity: area.fill_opacity ?? area.fillOpacity,
+                weight: area.weight,
+                dashArray: area.dash_array || area.dashArray,
+            },
+            geometry: {
+                type: 'Polygon',
+                coordinates: [coords],
+            },
+        });
+    });
+
+    if (!features.length) {
+        throw new Error('\u672a\u627e\u5230\u53ef\u7ed8\u5236\u7684 paths \u6216 areas');
+    }
+    return {
+        type: 'FeatureCollection',
+        features,
+    };
+}
+
+function clearTemporaryAirspace() {
+    temporaryAirspaceLayer.clearLayers();
+    if (elements.temporaryAirspaceStatus) {
+        elements.temporaryAirspaceStatus.textContent = '\u5f53\u524d\u9875\u9762\u6709\u6548\uff0c\u5237\u65b0\u540e\u6d88\u5931';
+    }
+    if (elements.temporaryAirspaceFile) {
+        elements.temporaryAirspaceFile.value = '';
+    }
+}
+
+function renderTemporaryAirspace(data, sourceName = '') {
+    const featureData = buildTemporaryAirspaceFeatures(data);
+    temporaryAirspaceLayer.clearLayers();
+    const geoLayer = L.geoJSON(featureData, {
+        pane: 'areaBoundaryPane',
+        renderer: areaBoundaryRenderer,
+        style: temporaryAirspaceStyle,
+        onEachFeature: (feature, layer) => {
+            bindTemporaryAirspaceTooltip(layer, feature.properties || {});
+        },
+    });
+    geoLayer.eachLayer((layer) => temporaryAirspaceLayer.addLayer(layer));
+    const count = temporaryAirspaceLayer.getLayers().length;
+    if (!count) {
+        throw new Error('\u6587\u4ef6\u5df2\u8bfb\u53d6\uff0c\u4f46\u6ca1\u6709\u53ef\u663e\u793a\u7684\u7ebf\u6216\u9762');
+    }
+    if (elements.temporaryAirspaceStatus) {
+        const suffix = sourceName ? `: ${sourceName}` : '';
+        elements.temporaryAirspaceStatus.textContent = `\u5df2\u52a0\u8f7d ${count} \u4e2a\u4e34\u65f6\u7a7a\u57df${suffix}`;
+    }
+    const bounds = temporaryAirspaceLayer.getBounds();
+    if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds.pad(0.12), { maxZoom: 12, animate: false });
+    }
+}
+
+async function loadTemporaryAirspaceFile(file) {
+    if (!file) {
+        return;
+    }
+    try {
+        const text = await file.text();
+        renderTemporaryAirspace(JSON.parse(text), file.name);
+    } catch (error) {
+        console.warn('[temporary-airspace] load failed:', error);
+        if (elements.temporaryAirspaceStatus) {
+            elements.temporaryAirspaceStatus.textContent = `\u52a0\u8f7d\u5931\u8d25: ${error.message}`;
+        }
+    } finally {
+        if (elements.temporaryAirspaceFile) {
+            elements.temporaryAirspaceFile.value = '';
+        }
+    }
+}
+
+function openTemporaryAirspaceModal() {
+    if (elements.temporaryAirspaceSampleCode) {
+        elements.temporaryAirspaceSampleCode.textContent = temporaryAirspaceSampleText();
+    }
+    if (elements.temporaryAirspaceModal) {
+        elements.temporaryAirspaceModal.classList.remove('hidden');
+    }
+}
+
+function closeTemporaryAirspaceModal() {
+    if (elements.temporaryAirspaceModal) {
+        elements.temporaryAirspaceModal.classList.add('hidden');
+    }
+}
+
+function downloadTemporaryAirspaceSample() {
+    const blob = new Blob([temporaryAirspaceSampleText()], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'temporary_airspace_sample.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+async function copyTemporaryAirspaceSample() {
+    const text = temporaryAirspaceSampleText();
+    if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+    } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+    }
+    if (elements.temporaryAirspaceStatus) {
+        elements.temporaryAirspaceStatus.textContent = '\u793a\u4f8b\u5df2\u590d\u5236\uff0c\u4fee\u6539\u540e\u53ef\u76f4\u63a5\u52a0\u8f7d';
+    }
 }
 
 function setPillState(element, mode) {
@@ -2927,6 +3246,19 @@ async function switchToLiveMode() {
     }
 }
 
+async function switchToReplayMode(centerTime = null) {
+    const current = centerTime || state.selectedFrameTime || (latestFrame() ? latestFrame().time : null);
+    setMode('replay');
+    if (!current) {
+        return;
+    }
+    try {
+        await loadHistoryRange(current);
+    } catch (error) {
+        console.warn('[replay-mode] failed to load 20min history range:', error);
+    }
+}
+
 function stopReplay() {
     if (state.replayTimer) {
         clearInterval(state.replayTimer);
@@ -3018,14 +3350,11 @@ async function selectHistoricalTrackPoint(time) {
     }
     if (state.mode === 'replay') {
         stopReplay();
-        const exists = state.frames.some((frame) => frame.time === time);
-        if (!exists) {
-            try {
-                await loadHistoryRange(time);
-                return;
-            } catch (error) {
-                console.warn('[history-range] fallback to existing frames:', error);
-            }
+        try {
+            await loadHistoryRange(time);
+            return;
+        } catch (error) {
+            console.warn('[history-range] fallback to existing frames:', error);
         }
     }
     selectFrameByTime(time, state.mode);
@@ -3328,47 +3657,99 @@ function updateMwrProfileCharts(selectedFrame) {
     renderProfileChart(charts.mwrLiquidProfile, '\u6db2\u6001\u6c34\u5ed3\u7ebf', '\u6db2\u6001\u6c34', levels, data ? data.liquid_water_profile : [], '#7c3aed');
 }
 
+function formatMwrZoneWindowLabel(startM) {
+    const endM = startM + MWR_ZONE_WINDOW_SIZE_M;
+    return `${startM / 1000}-${endM / 1000}km`;
+}
+
+function getMwrZoneWindowStarts() {
+    const starts = [];
+    for (let start = 0; start < MWR_ZONE_MAX_HEIGHT_M; start += MWR_ZONE_WINDOW_SIZE_M) {
+        starts.push(start);
+    }
+    return starts;
+}
+
+function syncMwrZoneHeightControls() {
+    if (!elements.mwrZoneHeightWindow) {
+        return;
+    }
+    const starts = getMwrZoneWindowStarts();
+    if (elements.mwrZoneHeightWindow.options.length !== starts.length) {
+        elements.mwrZoneHeightWindow.innerHTML = '';
+        starts.forEach((start) => {
+            const option = document.createElement('option');
+            option.value = String(start);
+            option.textContent = formatMwrZoneWindowLabel(start);
+            elements.mwrZoneHeightWindow.appendChild(option);
+        });
+    }
+    const maxStart = starts[starts.length - 1] || 0;
+    state.mwrZoneWindowStartM = Math.max(0, Math.min(state.mwrZoneWindowStartM, maxStart));
+    elements.mwrZoneHeightWindow.value = String(state.mwrZoneWindowStartM);
+    if (elements.mwrZoneHeightPrev) {
+        elements.mwrZoneHeightPrev.disabled = state.mwrZoneWindowStartM <= 0;
+    }
+    if (elements.mwrZoneHeightNext) {
+        elements.mwrZoneHeightNext.disabled = state.mwrZoneWindowStartM >= maxStart;
+    }
+}
+
 function updateMwrZoneChart(selectedFrame, displayFrames) {
     const frames = displayFrames
         .filter((frame) => frame.mwr && frame.mwr.status !== 'missing')
         .filter((frame) => frame.mwr.data && frame.mwr.data.saturated_zone);
     const latest = frames.length ? frames[frames.length - 1] : null;
     const levels = latest && latest.mwr.data ? latest.mwr.data.levels_m : [];
+    syncMwrZoneHeightControls();
+    const windowStart = state.mwrZoneWindowStartM;
+    const windowEnd = windowStart + MWR_ZONE_WINDOW_SIZE_M;
+    const visibleLevels = levels
+        .map((value, index) => ({ value: Number(value), index }))
+        .filter((item) => Number.isFinite(item.value))
+        .filter((item) => (
+            windowStart === 0
+                ? item.value >= windowStart && item.value <= windowEnd
+                : item.value > windowStart && item.value <= windowEnd
+        ));
     const xAxis = buildTimelineAxis(frames);
     const heatmap = [];
 
     frames.forEach((frame, xIndex) => {
         const codes = frame.mwr.data.saturated_zone.zone_codes || [];
-        codes.forEach((code, yIndex) => {
-            heatmap.push([xIndex, yIndex, code]);
+        visibleLevels.forEach((level, yIndex) => {
+            heatmap.push([xIndex, yIndex, codes[level.index] ?? -1]);
         });
     });
 
     charts.mwrZone.setOption({
         animation: false,
-        title: { text: '过冷水汽饱和区识别', left: 8, top: 4, textStyle: { fontSize: 14, fontWeight: 'normal' } },
+        title: { show: false },
         tooltip: {
             formatter(params) {
                 const xIndex = params.value[0];
                 const yIndex = params.value[1];
-                return `${xAxis[xIndex] || '--:--:--'}<br>${levels[yIndex] || '--'} m<br>类别 ${params.value[2]}`;
+                const level = visibleLevels[yIndex] ? visibleLevels[yIndex].value : '--';
+                return `${xAxis[xIndex] || '--:--:--'}<br>${level} m<br>类别 ${params.value[2]}`;
             },
         },
-        grid: { left: 64, right: 28, top: 82, bottom: 40 },
+        grid: { left: 64, right: 28, top: MWR_ZONE_GRID_TOP, bottom: MWR_ZONE_GRID_BOTTOM },
         xAxis: { type: 'category', data: xAxis, axisLabel: { rotate: 35 } },
         yAxis: {
             type: 'category',
             name: '\u9ad8\u5ea6',
             nameLocation: 'middle',
             nameGap: 46,
-            data: levels.map((value) => `${value} m`),
+            data: visibleLevels.map((item) => `${item.value} m`),
         },
         visualMap: {
             min: -1,
             max: 3,
             orient: 'horizontal',
             left: 'center',
-            top: 34,
+            top: MWR_ZONE_VISUAL_MAP_TOP,
+            itemGap: 10,
+            textGap: 4,
             pieces: [
                 { value: -1, label: 'Filled(no data)', color: 'grey' },
                 { value: 0, label: 'no cloud', color: 'white' },
@@ -3691,7 +4072,7 @@ function bindEvents() {
             location.href = '/login';
         });
     }
-    elements.applyWindow.addEventListener('click', async () => {
+    elements.applyWindowMinutes.addEventListener('click', async () => {
         const requested = Number(elements.windowMinutes.value) || 10;
         const allowed = MAX_LIVE_WINDOW_MINUTES;
         state.windowMinutes = Math.max(1, Math.min(requested, allowed));
@@ -3699,6 +4080,48 @@ function bindEvents() {
         setMode('live');
         updateWindowLimitIndicator();
     });
+    elements.applyReplayPointInterval.addEventListener('click', () => {
+        syncReplayPointInterval();
+        forceReplayRenderNow();
+        updateReplayControls();
+        requestRender();
+    });
+    if (elements.toggleTimelinePanel) {
+        elements.toggleTimelinePanel.addEventListener('click', () => {
+            state.timelineCollapsed = !state.timelineCollapsed;
+            refreshFlexibleLayout();
+        });
+    }
+    if (elements.toggleRightPanel) {
+        elements.toggleRightPanel.addEventListener('click', () => {
+            state.rightPanelCollapsed = !state.rightPanelCollapsed;
+            refreshFlexibleLayout();
+        });
+    }
+    if (elements.mwrZoneHeightWindow) {
+        syncMwrZoneHeightControls();
+        elements.mwrZoneHeightWindow.addEventListener('change', () => {
+            state.mwrZoneWindowStartM = Number(elements.mwrZoneHeightWindow.value) || 0;
+            requestRender();
+        });
+    }
+    if (elements.mwrZoneHeightPrev) {
+        elements.mwrZoneHeightPrev.addEventListener('click', () => {
+            state.mwrZoneWindowStartM = Math.max(0, state.mwrZoneWindowStartM - MWR_ZONE_WINDOW_SIZE_M);
+            syncMwrZoneHeightControls();
+            requestRender();
+        });
+    }
+    if (elements.mwrZoneHeightNext) {
+        elements.mwrZoneHeightNext.addEventListener('click', () => {
+            state.mwrZoneWindowStartM = Math.min(
+                MWR_ZONE_MAX_HEIGHT_M - MWR_ZONE_WINDOW_SIZE_M,
+                state.mwrZoneWindowStartM + MWR_ZONE_WINDOW_SIZE_M,
+            );
+            syncMwrZoneHeightControls();
+            requestRender();
+        });
+    }
     if (elements.applyDataSource) {
         elements.applyDataSource.addEventListener('click', async () => {
             try {
@@ -3716,12 +4139,6 @@ function bindEvents() {
     }
 
     elements.windowMinutes.addEventListener('input', updateWindowLimitIndicator);
-    if (elements.replayPointSeconds) {
-        elements.replayPointSeconds.addEventListener('input', () => {
-            syncReplayPointInterval();
-            requestRender();
-        });
-    }
     elements.showScdpBins.addEventListener('change', updateBinVisibility);
     elements.showIcfpBins.addEventListener('change', updateBinVisibility);
     if (elements.mapSource) {
@@ -3761,6 +4178,43 @@ function bindEvents() {
             state.fixedOverlayEnabled = elements.fixedOverlayEnabled.checked;
             renderImportantPoints();
         });
+    }
+    if (elements.temporaryAirspaceLoad && elements.temporaryAirspaceFile) {
+        elements.temporaryAirspaceLoad.addEventListener('click', () => {
+            elements.temporaryAirspaceFile.click();
+        });
+        elements.temporaryAirspaceFile.addEventListener('change', () => {
+            loadTemporaryAirspaceFile(elements.temporaryAirspaceFile.files[0]);
+        });
+    }
+    if (elements.temporaryAirspaceClear) {
+        elements.temporaryAirspaceClear.addEventListener('click', clearTemporaryAirspace);
+    }
+    if (elements.temporaryAirspaceSample) {
+        elements.temporaryAirspaceSample.addEventListener('click', openTemporaryAirspaceModal);
+    }
+    if (elements.temporaryAirspaceModalClose) {
+        elements.temporaryAirspaceModalClose.addEventListener('click', closeTemporaryAirspaceModal);
+    }
+    if (elements.temporaryAirspaceModalCloseSecondary) {
+        elements.temporaryAirspaceModalCloseSecondary.addEventListener('click', closeTemporaryAirspaceModal);
+    }
+    if (elements.temporaryAirspaceModal) {
+        elements.temporaryAirspaceModal.addEventListener('click', (event) => {
+            if (event.target === elements.temporaryAirspaceModal) {
+                closeTemporaryAirspaceModal();
+            }
+        });
+    }
+    if (elements.temporaryAirspaceCopySample) {
+        elements.temporaryAirspaceCopySample.addEventListener('click', () => {
+            copyTemporaryAirspaceSample().catch((error) => {
+                console.warn('[temporary-airspace] copy failed:', error);
+            });
+        });
+    }
+    if (elements.temporaryAirspaceDownloadSample) {
+        elements.temporaryAirspaceDownloadSample.addEventListener('click', downloadTemporaryAirspaceSample);
     }
     if (elements.radarOpacity) {
         elements.radarOpacity.addEventListener('input', () => {
@@ -3886,12 +4340,12 @@ function bindEvents() {
     });
 
     elements.replayModeBtn.addEventListener('click', () => {
-        setMode('replay');
+        switchToReplayMode();
     });
 
-    elements.replayPlayBtn.addEventListener('click', () => {
+    elements.replayPlayBtn.addEventListener('click', async () => {
         if (state.mode !== 'replay') {
-            setMode('replay');
+            await switchToReplayMode();
         }
         startReplay();
     });
@@ -3900,14 +4354,15 @@ function bindEvents() {
         stopReplay();
     });
 
-    elements.replaySlider.addEventListener('input', () => {
+    elements.replaySlider.addEventListener('input', async () => {
         const index = Number(elements.replaySlider.value) || 0;
         const frame = state.frames[index];
         if (!frame) {
             return;
         }
         if (state.mode !== 'replay') {
-            setMode('replay');
+            await switchToReplayMode(frame.time);
+            return;
         }
         stopReplay();
         state.selectedFrameTime = frame.time;

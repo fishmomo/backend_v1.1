@@ -10,7 +10,7 @@
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin=""
     >
-    <link rel="stylesheet" href="/static/styles.css?v=20260622-chart-layout-fix">
+    <link rel="stylesheet" href="/static/styles.css?v=20260625-temporary-airspace">
 </head>
 <body>
     <header class="topbar">
@@ -41,12 +41,13 @@
                     <input id="window-minutes" type="number" min="1" step="1" value="10">
                     <span>min</span>
                 </label>
+                <button id="apply-window-minutes" type="button">确认</button>
                 <label>
                     <span>回放点间隔</span>
                     <input id="replay-point-seconds" type="number" min="1" step="1" value="10">
                     <span>s</span>
                 </label>
-                <button id="apply-window" type="button">应用窗口</button>
+                <button id="apply-replay-point-interval" type="button">确认</button>
                 <label>
                     <span>数据日期</span>
                     <input id="data-source-date" type="date">
@@ -192,14 +193,23 @@
                     <span>显示 ICFP bins</span>
                 </label>
             </div>
+
+            <div class="rail-section permission-charts">
+                <div class="rail-title">临时空域</div>
+                <button id="temporary-airspace-load" type="button">加载临时空域</button>
+                <button id="temporary-airspace-clear" type="button">清除临时空域</button>
+                <button id="temporary-airspace-sample" type="button">格式示例</button>
+                <input id="temporary-airspace-file" class="hidden" type="file" accept=".json,.geojson,application/json,application/geo+json">
+                <span class="rail-note" id="temporary-airspace-status">当前页面有效，刷新后消失</span>
+            </div>
         </aside>
 
         <section class="center-stack">
             <section class="panel panel-map grid-map">
                 <div class="panel-header">
                     <div>
-                        <h2>航空态势地图</h2>
-                        <span>轨迹、雷达、Himawari 卫星云图综合显示</span>
+                        <h2>地图</h2>
+                        <span>综合显示</span>
                     </div>
                     <span id="track-summary">轨迹点 0</span>
                 </div>
@@ -231,21 +241,29 @@
                 <section class="panel panel-wide timeline-card">
                     <div class="panel-header">
                         <div>
-                            <h2>过冷水汽饱和区识别</h2>
+                            <h2>冰面水汽过饱和区识别</h2>
+                        </div>
+                        <div class="mwr-zone-controls" aria-label="高度窗口">
+                            <span>高度窗口</span>
+                            <select id="mwr-zone-height-window"></select>
+                            <button id="mwr-zone-height-prev" type="button" aria-label="上一高度窗口">-</button>
+                            <button id="mwr-zone-height-next" type="button" aria-label="下一高度窗口">+</button>
                         </div>
                     </div>
                     <div id="mwr-saturated-zone-chart" class="chart chart-heatmap"></div>
                 </section>
                 <button class="timeline-cue timeline-cue-right" type="button" aria-label="下一张图">&gt;</button>
             </section>
+            <button id="toggle-timeline-panel" class="collapse-toggle timeline-collapse-toggle permission-charts" type="button" aria-label="折叠时序图" aria-expanded="true">∨</button>
         </section>
 
         <section class="right-stack permission-charts" aria-label="传感器图表">
+            <button id="toggle-right-panel" class="collapse-toggle right-collapse-toggle" type="button" aria-label="折叠右侧图表" aria-expanded="true">›</button>
             <section class="panel grid-mwr-scalar">
                 <div class="panel-header">
                     <div>
-                        <h2>MWR 综合态势</h2>
-                        <span>地面微波辐射计</span>
+                        <h2>MWR 综合数据</h2>
+                        <span>机载微波辐射计</span>
                     </div>
                     <span id="mwr-status">--</span>
                 </div>
@@ -338,12 +356,28 @@
         </section>
     </div>
 
+    <div id="temporary-airspace-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="temporary-airspace-modal-title">
+        <section class="modal-window temporary-airspace-modal-window">
+            <header class="modal-header">
+                <h2 id="temporary-airspace-modal-title">临时空域格式示例</h2>
+                <button id="temporary-airspace-modal-close" class="modal-icon-button" type="button" aria-label="关闭">×</button>
+            </header>
+            <p class="modal-help">支持 GeoJSON，或使用下面的简化 JSON。坐标顺序为 [经度, 纬度]。</p>
+            <pre id="temporary-airspace-sample-code" class="sample-code"></pre>
+            <footer class="modal-actions">
+                <button id="temporary-airspace-copy-sample" type="button">复制示例</button>
+                <button id="temporary-airspace-download-sample" type="button">下载示例</button>
+                <button id="temporary-airspace-modal-close-secondary" type="button">关闭</button>
+            </footer>
+        </section>
+    </div>
+
     <script
         src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <script src="/static/app.js?v=20260622-chart-layout-fix"></script>
+    <script src="/static/app.js?v=20260625-temporary-airspace"></script>
 </body>
 </html>
