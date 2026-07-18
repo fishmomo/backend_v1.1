@@ -687,13 +687,18 @@ def latest(request: Request):
 @app.get('/api/history')
 def history(request: Request, seconds: int = 300):
     user = _require_user(request)
+    values = list(store.aligned_store.values())
     if seconds <= 0:
-        items = list(store.aligned_store.values())
-    elif store.max_history_seconds > 0:
-        capped = min(seconds, store.max_history_seconds)
-        items = list(store.aligned_store.values())[-capped:]
+        items = values
     else:
-        items = list(store.aligned_store.values())[-seconds:]
+        if store.max_history_seconds > 0:
+            seconds = min(seconds, store.max_history_seconds)
+        latest_item = values[-1] if values else None
+        if latest_item is None:
+            items = []
+        else:
+            start = latest_item.time - timedelta(seconds=max(1, int(seconds)))
+            items = [item for item in values if item.time >= start]
     return [_frame_for_user(item.to_dict(), user) for item in items]
 
 

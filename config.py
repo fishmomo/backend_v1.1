@@ -91,7 +91,7 @@ TRACK_SIM_SKIP_SECONDS = SIM_SKIP_SECONDS
 
 # Network
 HOST = _env_host or '127.0.0.1'
-PORT = int(_env_port) if _env_port else 8010
+PORT = int(_env_port) if _env_port else 28010
 AUTO_OPEN_BROWSER = True
 
 # Auth

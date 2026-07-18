@@ -54,7 +54,7 @@ const TEMPORARY_AIRSPACE_SAMPLE = {
         },
     ],
 };
-const FRONTEND_BUILD = '2026-06-25-temporary-airspace';
+const FRONTEND_BUILD = '2026-07-02-admin-history-window-fix';
 const AREA_BOUNDARY_WARNING_DEG = 0.02;
 const EARTH_RADIUS_KM = 6371.0088;
 const MAX_AZIMUTH_SECTOR_COUNT = 72;
@@ -141,7 +141,7 @@ const DEFAULT_PATH_STYLE = {
 };
 const VALID_MARKER_SHAPES = new Set(['circle', 'square', 'diamond', 'triangle']);
 window.__BY_WEATHER_FRONTEND_BUILD__ = FRONTEND_BUILD;
-window.__BY_WEATHER_LAYER_FIX__ = 'temporary-airspace-v1';
+window.__BY_WEATHER_LAYER_FIX__ = 'admin-history-window-fix-v1';
 console.info('[frontend build]', FRONTEND_BUILD);
 const state = {
     currentUser: null,
@@ -4001,7 +4001,8 @@ async function loadImportantPoints() {
 }
 
 async function loadHistory() {
-    const seconds = Math.max(1, Math.floor(MAX_LIVE_WINDOW_MINUTES * 60));
+    const minutes = Math.max(1, Math.min(Number(state.windowMinutes) || 10, MAX_LIVE_WINDOW_MINUTES));
+    const seconds = Math.max(1, Math.floor(minutes * 60));
     const historyUrl = `/api/history?seconds=${seconds}`;
     const response = await fetch(historyUrl);
     state.frames = await response.json();
